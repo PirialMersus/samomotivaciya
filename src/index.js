@@ -1,3 +1,4 @@
+const express = require('express');
 require('dotenv').config();
 const { Bot, GrammyError, HttpError } = require('grammy');
 const connectDB = require('./config/db');
@@ -8,7 +9,19 @@ const startApplication = async () => {
     // 1. Database Connection
     await connectDB();
 
-    // 2. Initialize Telegram Bot
+    // 2. Initialize Express Server (for Render health checks)
+    const app = express();
+    const PORT = process.env.PORT || 3000;
+
+    app.get('/health', (req, res) => {
+        res.status(200).send('Sensei is watching you...');
+    });
+
+    app.listen(PORT, () => {
+        console.log(`Web server is running on port ${PORT}`);
+    });
+
+    // 3. Initialize Telegram Bot
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {
         console.error("FATAL ERROR: TELEGRAM_BOT_TOKEN is missing in .env");
@@ -27,7 +40,7 @@ const startApplication = async () => {
 
     const bot = new Bot(botToken);
 
-    // 3. Register Handlers
+    // 4. Register Handlers
     bot.command('start', botControllers.handleStart);
     // Оставлена только базовая команда /start
     // Остальные перенесены в Reply-меню
@@ -66,10 +79,10 @@ const startApplication = async () => {
         console.error('UNHANDLED REJECTION 💥:', reason);
     });
 
-    // 4. Setup Cron Jobs
+    // 5. Setup Cron Jobs
     setupCronJobs(bot);
 
-    // 5. Start Polling
+    // 6. Start Polling
     console.log("Bot mentor is starting polling...");
     bot.start();
 };
