@@ -1,7 +1,12 @@
-const User = require('../models/User');
-const Report = require('../models/Report');
-const tasksConfig = require('../data/tasks');
-const geminiService = require('../services/gemini');
+import User from '../models/User.js';
+import Report from '../models/Report.js';
+import tasksConfig from '../data/tasks.js';
+import * as geminiService from '../services/gemini.js';
+import methodology from '../data/methodology.js';
+import { InlineKeyboard } from 'grammy';
+import { DateTime } from 'luxon';
+import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
+
 
 const emojis = ['🔥', '⚡️', '💪', '🎯', '🛠', '⚠️', '🚀', '🧠'];
 const formatTaskForMarkdown = (tasksString) => {
@@ -85,11 +90,6 @@ const handleProgress = async (ctx) => {
 
     await ctx.reply(text, { parse_mode: 'HTML' });
 };
-
-const methodology = require('../data/methodology');
-const { InlineKeyboard } = require('grammy');
-const { DateTime } = require('luxon');
-const { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } = require('../keyboards/settings');
 
 // Старые текстовые команды (контракты, центровки) удалены.
 
@@ -213,6 +213,8 @@ const handleSettingsCallback = async (ctx) => {
             parse_mode: 'HTML',
             reply_markup: createSettingsKeyboard()
         });
+    } else if (action === 'close') {
+        await ctx.deleteMessage();
     }
     await ctx.answerCallbackQuery();
 };
@@ -446,7 +448,7 @@ const handleMyChatMember = async (ctx) => {
     }
 };
 
-module.exports = {
+export {
     handleStart,
     handleProgress,
     handleSettings,

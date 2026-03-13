@@ -1,9 +1,9 @@
-const express = require('express');
-require('dotenv').config();
-const { Bot, GrammyError, HttpError } = require('grammy');
-const connectDB = require('./config/db');
-const botControllers = require('./controllers/bot.controller');
-const setupCronJobs = require('./services/cron');
+import express from 'express';
+import 'dotenv/config';
+import { Bot, GrammyError, HttpError } from 'grammy';
+import connectDB from './config/db.js';
+import * as botControllers from './controllers/bot.controller.js';
+import setupCronJobs from './services/cron.js';
 
 const startApplication = async () => {
     // 1. Database Connection
@@ -54,7 +54,6 @@ const startApplication = async () => {
     bot.callbackQuery('remind_later', botControllers.handleRemindLaterCallback);
 
     // Fallback for document/photo/text (currently just processing text for simplicity of the prototype)
-    bot.on('message:photo', botControllers.handlePhoto);
     bot.on('message:text', botControllers.handleText);
 
     bot.catch((err) => {

@@ -1,15 +1,15 @@
-const { InlineKeyboard } = require('grammy');
-const { DateTime } = require('luxon');
-const { TIMEZONE_REGIONS } = require('../data/timezones');
+import { InlineKeyboard } from 'grammy';
+import { DateTime } from 'luxon';
+import { TIMEZONE_REGIONS } from '../data/timezones.js';
 
-const createSettingsKeyboard = () => {
+export const createSettingsKeyboard = () => {
     return new InlineKeyboard()
         .text('🌐 Часовой пояс', 'settings:timezone')
         .row()
-        .text('⬅️ Назад', 'settings:back');
+        .text('❌ Закрыть', 'settings:close');
 };
 
-const createTimezoneRegionsKeyboard = () => {
+export const createTimezoneRegionsKeyboard = () => {
     const keyboard = new InlineKeyboard();
     Object.entries(TIMEZONE_REGIONS).forEach(([key, region]) => {
         keyboard.text(region.label, `timezone:region:${key}`).row();
@@ -18,7 +18,7 @@ const createTimezoneRegionsKeyboard = () => {
     return keyboard;
 };
 
-const createTimezoneCitiesKeyboard = (regionKey) => {
+export const createTimezoneCitiesKeyboard = (regionKey) => {
     const region = TIMEZONE_REGIONS[regionKey];
     const keyboard = new InlineKeyboard();
 
@@ -37,10 +37,4 @@ const createTimezoneCitiesKeyboard = (regionKey) => {
 
     keyboard.text('⬅️ Назад', 'settings:timezone');
     return keyboard;
-};
-
-module.exports = {
-    createSettingsKeyboard,
-    createTimezoneRegionsKeyboard,
-    createTimezoneCitiesKeyboard
 };

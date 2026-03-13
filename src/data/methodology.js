@@ -274,4 +274,4 @@ const methodology = {
   }
 };
 
-module.exports = methodology;
+export default methodology;

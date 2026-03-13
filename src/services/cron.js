@@ -1,8 +1,8 @@
-const cron = require('node-cron');
-const User = require('../models/User');
-const methodology = require('../data/methodology');
-const { InlineKeyboard } = require('grammy');
-const { DateTime } = require('luxon');
+import cron from 'node-cron';
+import User from '../models/User.js';
+import methodology from '../data/methodology.js';
+import { InlineKeyboard } from 'grammy';
+import { DateTime } from 'luxon';
 
 const setupCronJobs = (bot) => {
     // Единый джоб, работающий каждую минуту
@@ -188,4 +188,4 @@ const setupCronJobs = (bot) => {
     });
 };
 
-module.exports = setupCronJobs;
+export default setupCronJobs;
