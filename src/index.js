@@ -4,12 +4,13 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import connectDB from './config/db.js';
 import * as botControllers from './controllers/bot.controller.js';
 import setupCronJobs from './services/cron.js';
+import User from './models/User.js'; // Импорт для работы команды /setweek
 
 const startApplication = async () => {
-    // 1. Database Connection
+    // 1. Подключение к базе данных
     await connectDB();
 
-    // 2. Initialize Express Server (for Render health checks)
+    // 2. Инициализация Express (для health-checks на Render)
     const app = express();
     const PORT = process.env.PORT || 3000;
 
@@ -21,45 +22,74 @@ const startApplication = async () => {
         console.log(`Web server is running on port ${PORT}`);
     });
 
-    // 3. Initialize Telegram Bot
+    // 3. Инициализация Telegram Bot
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {
-        console.error("FATAL ERROR: TELEGRAM_BOT_TOKEN is missing in .env");
-        process.exit(1);
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-        console.error("FATAL ERROR: GEMINI_API_KEY is missing in .env");
-        process.exit(1);
-    }
-
-    if (!process.env.MONGODB_URI) {
-        console.error("FATAL ERROR: MONGODB_URI is missing in .env");
+        console.error("FATAL ERROR: TELEGRAM_BOT_TOKEN is missing");
         process.exit(1);
     }
 
     const bot = new Bot(botToken);
 
-    // 4. Register Handlers
-    bot.command('start', botControllers.handleStart);
-    // Оставлена только базовая команда /start
-    // Остальные перенесены в Reply-меню
+    // --- СЕКРЕТНЫЕ КОМАНДЫ АДМИНА ---
+    bot.command('setweek', async (ctx) => {
+        // Используем переменную из .env для проверки прав
+        const ADMIN_ID = Number(process.env.ADMIN_TELEGRAM_ID);
 
+        if (ctx.from.id !== ADMIN_ID) return;
+
+        const week = parseInt(ctx.message.text.split(' ')[1]);
+        if (week >= 1 && week <= 12) {
+            try {
+                await User.findOneAndUpdate(
+                    { chatId: ctx.from.id },
+                    { currentWeek: week },
+                    { upsert: true }
+                );
+                await ctx.reply(`📊 <b>Режим теста:</b> установлена неделя ${week}\n\nФилипп готов проверять отчеты по новым правилам.`, { parse_mode: 'HTML' });
+            } catch (err) {
+                console.error('Update week error:', err);
+                await ctx.reply('Ошибка при обновлении недели в базе.');
+            }
+        } else {
+            await ctx.reply('Укажи номер недели. Пример: /setweek 5');
+        }
+    });
+
+    // --- РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ---
+    bot.command('start', botControllers.handleStart);
     bot.on('my_chat_member', botControllers.handleMyChatMember);
 
-    // Callbacks for Settings and Timezones
+    // Колбэк для закрытия настроек (вместо кнопки "Назад")
+    bot.callbackQuery('close_settings', async (ctx) => {
+        try {
+            await ctx.deleteMessage();
+        } catch (e) {
+            // Игнорируем, если сообщение уже удалено
+        }
+    });
+
+    // Обработка остальных колбэков
     bot.callbackQuery(/settings:(.+)/, botControllers.handleSettingsCallback);
     bot.callbackQuery(/timezone:(.+)/, botControllers.handleTimezoneCallback);
     bot.callbackQuery(/done:(.+)/, botControllers.handleTaskDoneCallback);
+    bot.callbackQuery('show_lecture', botControllers.handleShowLectureCallback);
     bot.callbackQuery('remind_later', botControllers.handleRemindLaterCallback);
 
-    // Fallback for document/photo/text (currently just processing text for simplicity of the prototype)
+    // Основной прием текстовых сообщений (отчеты и общение)
     bot.on('message:text', botControllers.handleText);
 
+    // Глобальный обработчик ошибок
     bot.catch((err) => {
         const ctx = err.ctx;
-        console.error(`Error while handling update ${ctx?.update?.update_id}:`);
         const e = err.error;
+
+        // Подавляем ошибку "сообщение не изменено", чтобы не спамить в консоль
+        if (e instanceof GrammyError && e.description.includes('message is not modified')) {
+            return;
+        }
+
+        console.error(`Error while handling update ${ctx?.update?.update_id}:`);
         if (e instanceof GrammyError) {
             console.error("Error in request:", e.description);
         } else if (e instanceof HttpError) {
@@ -69,19 +99,19 @@ const startApplication = async () => {
         }
     });
 
-    // Global Error Handlers
+    // Обработчики критических падений процесса
     process.on('uncaughtException', (error) => {
         console.error('UNCAUGHT EXCEPTION 🔥:', error);
     });
 
-    process.on('unhandledRejection', (reason, promise) => {
+    process.on('unhandledRejection', (reason) => {
         console.error('UNHANDLED REJECTION 💥:', reason);
     });
 
-    // 5. Setup Cron Jobs
+    // 5. Запуск Cron-задач (напоминания и прочее)
     setupCronJobs(bot);
 
-    // 6. Start Polling
+    // 6. Запуск бота
     console.log("Bot mentor is starting polling...");
     bot.start();
 };

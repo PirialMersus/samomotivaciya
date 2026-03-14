@@ -3,14 +3,9 @@ import methodology from '../data/methodology.js';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Функция очистки текста от артефактов ИИ
 const formatResponse = (text) => {
   if (!text) return text;
-  return text
-    .replace(/\\n/g, '\n')   
-    .replace(/```html/g, '') 
-    .replace(/```/g, '')
-    .trim();
+  return text.trim();
 };
 
 const getSystemInstruction = () => {
@@ -23,11 +18,20 @@ const getSystemInstruction = () => {
 ОСНОВНЫЕ ПРАВИЛА:
 - Общайся строго, холодно, без мата.
 - БУДЬ КРАТОК: до 3000 символов.
-- ФОРМАТ: ТОЛЬКО HTML (<b>, <i>, <s>, <u>). НИКАКОГО Markdown.
-- Абзацы — через двойной перенос строки (\\n\\n).
+- ПЕРЕНОСЫ СТРОК: Используй \n\n для разделения мыслей.
+- ФОРМАТИРОВАНИЕ: Разрешено использовать ТОЛЬКО <b>, <i>, <u>, <s>.
+- ЗАПРЕЩЕНО: Никаких тегов <p>, <div>, <ul>, <li>. Вообще.
+- ЛЕКЦИИ: Если игрок тупит, напомни ему прочитать «Конспект лекции» в меню «📚 Задания».
 - При нытье («устал», «не могу»): «СТОП. Это жалоба. 50 отжиманий. Доложи».
 
+ВЫДАВАЙ ОТВЕТ СТРОГО В JSON:
+{
+  "response_text": "Текст твоего ответа с использованием <b>акцентов</b> и \\n для переносов",
+  "verdict": "ПРИНЯТО или ОТКЛОНЕНО или ОТВЕТ"
+}
+
 ПРАВИЛА ПО НЕДЕЛЯМ:
+Неделя 1: Глобальные задачи (фильмы, эссе) на ВСЮ неделю. Если сделан 1 фильм из 3 — ПРИНИМАЙ.
 Неделя 2: Награда только после цели. Никаких праздников просто так.
 Неделя 3: Концепция 2 мозгов. При панике: «Где твое внимание сейчас?».
 Неделя 4: Деньги у людей. Будь полезен на высоких орбитах.
@@ -39,15 +43,16 @@ const getSystemInstruction = () => {
 Неделя 10: Тюнинг vs Стайлинг. Инвестируй в мозги и наставника.
 Неделя 11: Пилот Аватара. Выбор между болотом и Путем Творца.
 Неделя 12: Финал. Репутация — твой капитал. Не будь архипиздюком.
-
-Вердикт по отчетам: саркастично, в конце [ПРИНЯТО] или [ОТКЛОНЕНО].
 `;
 };
 
 const getModel = () => {
   return genAI.getGenerativeModel({
-    model: "gemini-2.5-flash", 
-    systemInstruction: getSystemInstruction()
+    model: "gemini-2.5-flash",
+    systemInstruction: getSystemInstruction(),
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
   });
 };
 
@@ -55,7 +60,7 @@ export const analyzeReport = async (reportText, userWeek) => {
   try {
     const weekData = methodology.weeks[userWeek];
     const taskDescription = JSON.stringify(weekData, null, 2);
-    
+
     const prompt = `
 Задание на Неделю ${userWeek}:
 ${taskDescription}
@@ -63,10 +68,13 @@ ${taskDescription}
 Отчет подопечного:
 "${reportText}"
 
-Оцени жестко. Проверь daily_routine и задачи. В конце: [ПРИНЯТО] или [ОТКЛОНЕНО].`;
+Оцени жестко. Проверь daily_routine. В поле "verdict" укажи ПРИНЯТО или ОТКЛОНЕНО.`;
 
     const result = await getModel().generateContent(prompt);
-    return formatResponse(result.response.text());
+    const parsed = JSON.parse(result.response.text());
+
+    const finalResult = `${parsed.response_text}\n\n[${parsed.verdict}]`;
+    return formatResponse(finalResult);
   } catch (error) {
     console.error("Gemini API Error:", error);
     return "Система сбоит. Твой отчет не проверен. [ОШИБКА]";
@@ -77,17 +85,17 @@ export const chatWithMentor = async (userMessage, userWeek, isHelpRequest = fals
   try {
     const weekData = methodology.weeks[userWeek];
     const taskDescription = JSON.stringify(weekData, null, 2);
-    
+
     let prompt = `Контекст: Неделя ${userWeek}.\nЗадания: ${taskDescription}\n\n`;
-    
     if (isHelpRequest) {
-      prompt += `ПОДОПЕЧНЫЙ ПРОСИТ ПОМОЩИ. Ответь сурово и по базе лекций.\n\n`;
+      prompt += `ПОДОПЕЧНЫЙ ПРОСИТ ПОМОЩИ. Ответь сурово.\n\n`;
     }
-    
     prompt += `Сообщение подопечного: "${userMessage}"`;
-    
+
     const result = await getModel().generateContent(prompt);
-    return formatResponse(result.response.text());
+    const parsed = JSON.parse(result.response.text());
+
+    return formatResponse(parsed.response_text);
   } catch (error) {
     console.error("Gemini Chat Error:", error);
     return `[ОШИБКА системы связи]`;
