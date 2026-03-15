@@ -58,19 +58,40 @@ const getModel = () => {
 
 export const analyzeReport = async (reportText, userWeek) => {
   try {
-    const weekData = methodology.weeks[userWeek];
-    const taskDescription = JSON.stringify(weekData, null, 2);
+    const weekData = methodology.weeks[userWeek] || { title: "Общий протокол", global_tasks: [] };
+    
+    // Подготовка списка глобальных задач для ИИ
+    const globalTasksList = weekData.global_tasks?.map(t => `- [${t.id}] ${t.title}`).join('\n') || 'Нет специфических глобальных задач.';
 
-    const prompt = `
-Задание на Неделю ${userWeek}:
-${taskDescription}
+    const systemInstruction = `Ты — суровый, саркастичный, но справедливый ИИ-ментор "Сэнсэй". Твоя цель — заставить человека измениться через жесткую дисциплину.
+Программа: "Самомотивация". Неделя ${userWeek}: ${weekData.title}.
 
-Отчет подопечного:
-"${reportText}"
+Твоя задача: проанализировать отчет пользователя и вынести вердикт.
 
-Оцени жестко. Проверь daily_routine. В поле "verdict" укажи ПРИНЯТО или ОТКЛОНЕНО.`;
+Критерии вердикта:
+1. Если отчет содержит реальную работу над глобальными задачами недели — он ПРИНЯТ. Ищи искренность и выводы, а не объем.
+2. Глобальные задачи этой недели:
+${globalTasksList}
 
-    const result = await getModel().generateContent(prompt);
+3. Если пользователь ноет, оправдывается или жалуется на жизнь без конкретных действий — назначь ему 50 отжиманий.
+4. ОТВЕТ ДОЛЖЕН БЫТЬ СТРОГО В ТАКОМ ФОРМАТЕ:
+   - Твой текст фидбека (суровый, короткий, по делу).
+   - Если задача принята, в самом конце добавь метку: [ПРИНЯТО]
+   - Если ты видишь, что какая-то из ГЛОБАЛЬНЫХ ЗАДАЧ выполнена, добавь в конце метку: [COMPLETED: id1, id2] (указывай id из списка выше).
+   - Если есть нытье, добавь в конце: 50 отжиманий.
+
+Будь краток. Используй HTML-теги для оформления (b, i). Никакого Markdown.`;
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: systemInstruction,
+      generationConfig: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const prompt = `Отчет подопечного: "${reportText}"`;
+    const result = await model.generateContent(prompt);
     const parsed = JSON.parse(result.response.text());
 
     const finalResult = `${parsed.response_text}\n\n[${parsed.verdict}]`;

@@ -5,28 +5,36 @@ import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
 import * as geminiService from '../services/gemini.js';
 import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
+import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
 
 const handleStart = async (ctx) => {
     const telegramId = ctx.from.id;
     const username = ctx.from.username || '';
     const isCreator = telegramId.toString() === process.env.CREATOR_ID;
 
-    const keyboard = {
-        keyboard: [
-            [{ text: "📚 Задания" }, { text: "📈 Прогресс" }],
-            [{ text: "🧘 Сэнсэй, помоги!" }, { text: "⚙️ Настройки" }]
-        ],
-        resize_keyboard: true
-    };
+    const keyboard = createMainMenuKeyboard();
 
     let user = await User.findOne({ telegramId });
+
+    if (user && user.frozen) {
+        const now = DateTime.now().toJSDate();
+        if (user.unfreezeDate && now >= user.unfreezeDate) {
+            user.frozen = false;
+            user.strikes = 0;
+            user.unfreezeDate = null;
+            await user.save();
+            await ctx.reply("<b>Сэнсэй:</b> Твое наказание окончено. Я разморозил твой доступ. Не заставляй меня делать это снова. Соберись и работай.", { parse_mode: 'HTML', reply_markup: keyboard });
+            return;
+        }
+    }
 
     if (!user) {
         user = new User({ telegramId, username, isRegistered: true });
         await user.save();
-        await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 11 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Опоздал хотя бы на секунду после 00:00 — заморозка. Твоя первая неделя началась.`, { reply_markup: keyboard });
+        await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 12 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Первая неделя началась.`, { reply_markup: keyboard });
     } else if (user.frozen && !isCreator) {
-        await ctx.reply("Куда ты лезешь? Ты заморожен за невыполнение требований. Жди, пока я решу, что с тобой делать, или связывайся с администрацией.");
+        const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
+        await ctx.reply(`Ты заморожен за невыполнение требований или нытье. Твой доступ будет восстановлен автоматически: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
     } else {
         await ctx.reply(`Чего прохлаждаешься? У тебя идет Неделя ${user.currentWeek}. Жми кнопки ниже.`, { reply_markup: keyboard });
     }
@@ -109,25 +117,20 @@ const handleTasks = async (ctx) => {
         message += `\n<b>Табу:</b>\n${weekData.taboo.join(', ')}`;
     }
 
-    const keyboard = new InlineKeyboard();
-    let hasButtons = false;
-
-    if (weekData.lecture_notes) {
-        keyboard.text("📚 Конспект лекции", "show_lecture").row();
-        hasButtons = true;
-    }
+    const taskKeyboard = new InlineKeyboard();
+    let hasTaskButtons = false;
 
     weekData.daily_routine.forEach(t => {
         const isDone = user.progress?.get(`${t.id}_${todayStr}`);
         if (!isDone) {
-            keyboard.text(`Сделал ✅: ${t.title}`, `done:${t.id}`).row();
-            hasButtons = true;
+            taskKeyboard.text(`Сделал ✅: ${t.title}`, `done:${t.id}`).row();
+            hasTaskButtons = true;
         }
     });
 
     await ctx.reply(message, {
         parse_mode: 'HTML',
-        reply_markup: hasButtons ? keyboard : undefined
+        reply_markup: hasTaskButtons ? taskKeyboard : undefined
     });
 };
 
@@ -166,10 +169,14 @@ const handleShowLectureCallback = async (ctx) => {
 
     const weekData = methodology.weeks[user.currentWeek];
     if (!weekData || !weekData.lecture_notes) {
-        return ctx.answerCallbackQuery({ text: "Конспект пока не готов." });
+        if (ctx.callbackQuery) {
+            return ctx.answerCallbackQuery({ text: "Конспект пока не готов." });
+        } else {
+            return ctx.reply("Конспект пока не готов.");
+        }
     }
 
-    await ctx.answerCallbackQuery();
+    if (ctx.callbackQuery) await ctx.answerCallbackQuery();
     await ctx.reply(`<b>📚 КОНСПЕКТ НЕДЕЛИ ${user.currentWeek}</b>\n\n${weekData.lecture_notes}`, { parse_mode: 'HTML' });
 };
 
@@ -231,9 +238,23 @@ const handleText = async (ctx) => {
     if (text === "📚 Задания") return handleTasks(ctx);
     if (text === "📈 Прогресс") return handleProgress(ctx);
     if (text === "🧘 Сэнсэй, помоги!") {
+        return ctx.reply("Это раздел помощи. Здесь ты можешь изучить теорию текущей недели или задать вопрос Сэнсэю напрямую.", {
+            reply_markup: createHelpMenuKeyboard()
+        });
+    }
+
+    if (text === "📚 Конспект лекции") return handleShowLectureCallback(ctx);
+
+    if (text === "❓ Задать вопрос") {
         user.isAskingHelp = true;
         await user.save();
         return ctx.reply("Излагай. Только помни: нытье = 50 отжиманий.");
+    }
+
+    if (text === "🔙 Назад") {
+        return ctx.reply("Возвращаю в главное меню. Не расслабляйся.", {
+            reply_markup: createMainMenuKeyboard()
+        });
     }
 
     if (user.currentWeek === 8) {
@@ -267,11 +288,50 @@ const handleText = async (ctx) => {
             });
             await newReport.save();
 
-            user.currentDay += 1;
-            if (user.currentDay > 7) {
+            // Извлекаем выполненные задачи
+            const completedMatch = feedback.match(/\[COMPLETED: (.*?)\]/);
+            if (completedMatch) {
+                const taskIds = completedMatch[1].split(',').map(id => id.trim());
+                taskIds.forEach(id => {
+                    if (!user.completedGlobalTasks.includes(id)) {
+                        user.completedGlobalTasks.push(id);
+                    }
+                });
+            }
+
+            // Проверяем рутину на 100% за сегодня
+            const weekData = methodology.weeks[user.currentWeek];
+            const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
+            const todayStr = dt.toFormat('yyyy-MM-dd');
+            
+            let dailyTotal = 0;
+            let dailyDone = 0;
+            if (weekData && weekData.daily_routine) {
+                weekData.daily_routine.forEach(t => {
+                    dailyTotal++;
+                    if (user.progress?.get(`${t.id}_${todayStr}`)) dailyDone++;
+                });
+            }
+            if (dailyTotal > 0 && dailyDone === dailyTotal) {
+                user.totalRoutineDays += 1;
+            }
+
+            // Проверка условий перехода на новую неделю
+            const allGlobalTasks = weekData.global_tasks?.map(t => t.id) || [];
+            const isAllGlobalDone = allGlobalTasks.every(id => user.completedGlobalTasks.includes(id));
+            const isAnyRoutineDone = user.totalRoutineDays >= 1;
+
+            if (isAllGlobalDone && isAnyRoutineDone) {
                 user.currentWeek += 1;
                 user.currentDay = 1;
-                await ctx.reply(`Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
+                user.completedGlobalTasks = [];
+                user.totalRoutineDays = 0;
+                await ctx.reply(`<b>ВНИМАНИЕ!</b> Ты закрыл все задачи. Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
+            } else {
+                let statusMsg = "Засчитано. ";
+                if (!isAllGlobalDone) statusMsg += `Остались хвосты по глобал-задачам. `;
+                if (!isAnyRoutineDone) statusMsg += `Нужен хотя бы один день 100% рутины. `;
+                await ctx.reply(`<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
             }
             await user.save();
         }
@@ -280,9 +340,10 @@ const handleText = async (ctx) => {
             user.strikes = (user.strikes || 0) + 1;
             if (user.strikes >= 3) {
                 user.frozen = true;
-                await ctx.reply("<b>ФИНИШ.</b> Ты заморожен.", { parse_mode: 'HTML' });
+                user.unfreezeDate = DateTime.now().plus({ days: 1 }).toJSDate();
+                await ctx.reply(`<b>ФИНИШ.</b> Ты заморожен на 24 часа за нытье.`, { parse_mode: 'HTML' });
             } else {
-                await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> У тебя ${user.strikes}/3.`, { parse_mode: 'HTML' });
+                await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> У тебя ${user.strikes}/3. Еще косяк — и в бан.`, { parse_mode: 'HTML' });
             }
             await user.save();
         }
@@ -291,6 +352,19 @@ const handleText = async (ctx) => {
         if (isHelpRequest) {
             user.isAskingHelp = false;
             await user.save();
+        }
+
+        // Проверка бана перед обработкой текста
+        if (user.frozen) {
+            const now = DateTime.now().toJSDate();
+            if (user.unfreezeDate && now >= user.unfreezeDate) {
+                user.frozen = false;
+                user.strikes = 0;
+                user.unfreezeDate = null;
+                await user.save();
+            } else {
+                return ctx.reply("Ты в бане. Жди.");
+            }
         }
 
         const loadingMsg = await ctx.reply("⏳ <b>Сэнсэй анализирует...</b>", { parse_mode: 'HTML' });
@@ -306,7 +380,8 @@ const handleText = async (ctx) => {
             user.strikes = (user.strikes || 0) + 1;
             if (user.strikes >= 3) {
                 user.frozen = true;
-                await ctx.reply("<b>БАН ЗА НЫТЬЕ.</b>", { parse_mode: 'HTML' });
+                user.unfreezeDate = DateTime.now().plus({ days: 1 }).toJSDate();
+                await ctx.reply("<b>БАН ЗА НЫТЬЕ.</b> На 24 часа.", { parse_mode: 'HTML' });
             } else {
                 await ctx.reply(`<b>СТРАЙК!</b> ${user.strikes}/3.`, { parse_mode: 'HTML' });
             }

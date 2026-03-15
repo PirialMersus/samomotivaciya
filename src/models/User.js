@@ -66,6 +66,18 @@ const userSchema = new mongoose.Schema({
     followersCount: {
         type: Number,
         default: 0
+    },
+    completedGlobalTasks: {
+        type: [String],
+        default: []
+    },
+    unfreezeDate: {
+        type: Date,
+        default: null
+    },
+    totalRoutineDays: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true,
