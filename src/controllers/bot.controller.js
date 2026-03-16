@@ -31,6 +31,12 @@ const handleStart = async (ctx) => {
     if (!user) {
         user = new User({ telegramId, username, isRegistered: true });
         await user.save();
+        
+        const adminId = process.env.CREATOR_ID;
+        if (adminId && telegramId.toString() !== adminId) {
+            await ctx.api.sendMessage(adminId, `<b>[НОВЫЙ ПОДОПЕЧНЫЙ]</b>\n\nАккаунт: @${username || 'без username'}\nID: <code>${telegramId}</code>\n\n+1 человек в системе.`, { parse_mode: 'HTML' });
+        }
+
         await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 12 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Первая неделя началась.`, { reply_markup: keyboard });
     } else if (user.frozen && !isCreator) {
         const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
@@ -106,7 +112,9 @@ const handleTasks = async (ctx) => {
 
     message += `\n<b>Глобальные задачи недели:</b>\n`;
     weekData.global_tasks?.forEach(t => {
-        message += `🔥 ${t.title}\n`;
+        const isDone = user.completedGlobalTasks?.includes(t.id);
+        const icon = t.isPersistent ? '🔄' : (isDone ? '✅' : '❌');
+        message += `🔥 ${t.title} ${icon}\n`;
     });
 
     if (user.currentWeek === 5) {
@@ -128,10 +136,17 @@ const handleTasks = async (ctx) => {
         }
     });
 
-    await ctx.reply(message, {
-        parse_mode: 'HTML',
-        reply_markup: hasTaskButtons ? taskKeyboard : undefined
-    });
+    if (ctx.callbackQuery) {
+        await ctx.editMessageText(message, {
+            parse_mode: 'HTML',
+            reply_markup: hasTaskButtons ? taskKeyboard : undefined
+        });
+    } else {
+        await ctx.reply(message, {
+            parse_mode: 'HTML',
+            reply_markup: hasTaskButtons ? taskKeyboard : undefined
+        });
+    }
 };
 
 const handleTaskDoneCallback = async (ctx) => {
@@ -159,6 +174,8 @@ const handleTaskDoneCallback = async (ctx) => {
     try {
         await handleTasks(ctx);
     } catch (e) {
+        // Если сообщение не изменилось, игнорируем
+        if (e.description?.includes("message is not modified")) return;
         console.error(e);
     }
 };
@@ -249,6 +266,12 @@ const handleText = async (ctx) => {
         user.isAskingHelp = true;
         await user.save();
         return ctx.reply("Излагай. Только помни: нытье = 50 отжиманий.");
+    }
+ 
+    if (text === "✍️ Написать админу") {
+        user.isMessagingAdmin = true;
+        await user.save();
+        return ctx.reply("Пиши свое сообщение админу. Я перешлю как есть. Только не спамь.");
     }
 
     if (text === "🔙 Назад") {
@@ -349,6 +372,20 @@ const handleText = async (ctx) => {
         }
     } else {
         const isHelpRequest = user.isAskingHelp;
+        const isToAdmin = user.isMessagingAdmin;
+ 
+        if (isToAdmin) {
+            user.isMessagingAdmin = false;
+            await user.save();
+            const adminId = process.env.CREATOR_ID;
+            if (adminId) {
+                await ctx.api.sendMessage(adminId, `<b>[СООБЩЕНИЕ АДМИНУ]</b> от @${user.username || user.telegramId}:\n\n${text}`, { parse_mode: 'HTML' });
+                return ctx.reply("Отправлено. Админ ответит, как только вылезет из танка.");
+            } else {
+                return ctx.reply("Ошибка: ID админа не настроен.");
+            }
+        }
+ 
         if (isHelpRequest) {
             user.isAskingHelp = false;
             await user.save();

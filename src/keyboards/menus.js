@@ -12,6 +12,7 @@ const createHelpMenuKeyboard = () => {
     return {
         keyboard: [
             [{ text: "📚 Конспект лекции" }],
+            [{ text: "✍️ Написать админу" }],
             [{ text: "❓ Задать вопрос" }],
             [{ text: "🔙 Назад" }]
         ],

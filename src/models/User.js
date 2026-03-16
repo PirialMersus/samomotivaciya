@@ -51,6 +51,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    isMessagingAdmin: {
+        type: Boolean,
+        default: false
+    },
     socialCapitalEur: {
         type: Number,
         default: 0

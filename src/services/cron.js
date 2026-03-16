@@ -20,13 +20,27 @@ const setupCronJobs = (bot) => {
                         const weekData = methodology.weeks[user.currentWeek];
                         if (!weekData) continue;
 
-                        let msgText = `<b>Утро, салага!</b>\n07:00 на твоих часах. ${weekData.title}\nНиже твоя рутина на сегодня. Жми кнопки по мере выполнения.`;
+                        let msgText = `<b>УТРО, САЛАГА!</b>\n07:00 на твоих часах.\n\n<b>Неделя ${user.currentWeek}: ${weekData.title}</b>\n`;
                         
-                        // Специфика 2 недели
                         if (user.currentWeek === 2) {
-                            msgText = `Встал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n\n<b>${weekData.title}</b>`;
+                            msgText += `\nВстал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n`;
                         } else if (user.currentWeek === 4) {
-                            msgText = `8 километров сами себя не пройдут. Вставай и насыщай мозг кислородом. Отдавай, чтобы получать.\n\n<b>${weekData.title}</b>`;
+                            msgText += `\n8 километров сами себя не пройдут. Вставай и насыщай мозг кислородом. Отдавай, чтобы получать.\n`;
+                        } else {
+                            msgText += `\nНиже твоя рутина на сегодня. Жми кнопки по мере выполнения.\n`;
+                        }
+
+                        if (weekData.global_tasks?.length > 0) {
+                            msgText += `\n<b>Глобальные задачи недели:</b>\n`;
+                            weekData.global_tasks.forEach(t => {
+                                const isDone = user.completedGlobalTasks?.includes(t.id);
+                                const icon = t.isPersistent ? '🔄' : (isDone ? '✅' : '❌');
+                                msgText += `🔥 ${t.title} ${icon}\n`;
+                            });
+                        }
+
+                        if (weekData.taboo?.length > 0) {
+                            msgText += `\n<b>⚠️ ТАБУ:</b>\n• ${weekData.taboo.join('\n• ')}\n`;
                         }
 
                         await bot.api.sendMessage(user.telegramId, msgText, { parse_mode: 'HTML' });
