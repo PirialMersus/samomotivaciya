@@ -82,6 +82,26 @@ const userSchema = new mongoose.Schema({
     totalRoutineDays: {
         type: Number,
         default: 0
+    },
+    lastReportDate: {
+        type: String,
+        default: ''
+    },
+    lastActivityAt: {
+        type: Date,
+        default: Date.now
+    },
+    lastGeminiCall: {
+        type: Date,
+        default: null
+    },
+    addingTaskStep: {
+        type: String, // 'title', 'date', null
+        default: null
+    },
+    tempTaskTitle: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true,

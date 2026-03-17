@@ -1,5 +1,7 @@
 import cron from 'node-cron';
 import User from '../models/User.js';
+import Report from '../models/Report.js';
+import CustomTask from '../models/CustomTask.js';
 import methodology from '../data/methodology.js';
 import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
@@ -40,7 +42,7 @@ const setupCronJobs = (bot) => {
                         }
 
                         if (weekData.taboo?.length > 0) {
-                            msgText += `\n<b>⚠️ ТАБУ:</b>\n• ${weekData.taboo.join('\n• ')}\n`;
+                            msgText += `\n<b>⚠️ ТАБУ:</b>\n☠️ ${weekData.taboo.join('\n☠️ ')}\n`;
                         }
 
                         await bot.api.sendMessage(user.telegramId, msgText, { parse_mode: 'HTML' });
@@ -152,7 +154,6 @@ const setupCronJobs = (bot) => {
                         await bot.api.sendMessage(user.telegramId, "<b>ДЕДЛАЙН:</b> Время вышло. Либо ты в списке победителей, либо остаешься в прошлом. Жду финальный видео-отзыв и генеральный отчет за 3 месяца.", { parse_mode: 'HTML' });
                     }
 
-                    // Вечер 23:30 (Предупреждение)
                     if (dt.hour === 23 && dt.minute === 30) {
                         const weekData = methodology.weeks[user.currentWeek];
                         if (!weekData) continue;
@@ -163,31 +164,40 @@ const setupCronJobs = (bot) => {
                             if (!isDone) hasUndone = true;
                         }
 
-                        if (hasUndone) {
-                            await bot.api.sendMessage(user.telegramId, "<b>ВНИМАНИЕ!</b> 23:30. У тебя остались невыполненные задачи на сегодня. Если до полуночи не закроешь их — получишь страйк. Шевелись!", { parse_mode: 'HTML' });
+                        const hasReportToday = user.lastReportDate === todayStr;
+
+                        if (hasUndone || !hasReportToday) {
+                            let warningParts = [];
+                            if (hasUndone) warningParts.push("невыполненные задачи рутины");
+                            if (!hasReportToday) warningParts.push("не сдан дневной отчёт");
+                            await bot.api.sendMessage(user.telegramId, `<b>ВНИМАНИЕ!</b> 23:30. У тебя: ${warningParts.join(' и ')}. Если до полуночи не закроешь — получишь страйк. Шевелись!`, { parse_mode: 'HTML' });
                         }
                     }
 
-                    // Полночь 00:00 (Проверка и наказание страйками)
                     if (dt.hour === 0 && dt.minute === 0) {
                         const dtYesterday = dt.minus({ days: 1 });
                         const yesterdayStr = dtYesterday.toFormat('yyyy-MM-dd');
                         const weekData = methodology.weeks[user.currentWeek];
                         if (!weekData) continue;
 
-                        let hasUndone = false;
+                        let hasUndoneRoutine = false;
                         for (const task of weekData.daily_routine) {
                             const isDone = user.progress?.get(`${task.id}_${yesterdayStr}`);
-                            if (!isDone) hasUndone = true;
+                            if (!isDone) hasUndoneRoutine = true;
                         }
 
-                        if (hasUndone) {
+                        const hadReportYesterday = user.lastReportDate === yesterdayStr;
+
+                        if (hasUndoneRoutine || !hadReportYesterday) {
                             user.strikes = (user.strikes || 0) + 1;
+                            let reasonParts = [];
+                            if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
+                            if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
                             if (user.strikes >= 3) {
                                 user.frozen = true;
                                 await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 3 страйка (нытье или провалы). Ты заморожен и лишен голоса в этом чате. Переходи в оффлайн-режим и подумай над своим поведением.", { parse_mode: 'HTML' });
                             } else {
-                                await bot.api.sendMessage(user.telegramId, `<b>СТРАЙК!</b> Ты не выполнил базовые задачи за прошлый день. У тебя ${user.strikes} страйка(ов) из 3 максимальных. Дальше — бан.`, { parse_mode: 'HTML' });
+                                await bot.api.sendMessage(user.telegramId, `<b>СТРАЙК!</b> Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes} страйка(ов) из 3 максимальных. Дальше — бан.`, { parse_mode: 'HTML' });
                             }
                             await user.save();
                         }
@@ -198,6 +208,29 @@ const setupCronJobs = (bot) => {
             }
         } catch (error) {
             console.error('Error in minute cron job:', error);
+        }
+    });
+
+    // Ежедневная очистка в 03:00
+    cron.schedule('0 3 * * *', async () => {
+        try {
+            console.log("Running auto-cleanup job (03:00)...");
+            const thirtyDaysAgo = DateTime.now().minus({ days: 30 }).toJSDate();
+            
+            // Находим пользователей, у которых lastActivityAt < thirtyDaysAgo
+            const inactiveUsers = await User.find({ lastActivityAt: { $lt: thirtyDaysAgo } });
+            
+            for (const user of inactiveUsers) {
+                console.log(`Cleaning up inactive user: ${user.telegramId}`);
+                await Report.deleteMany({ userId: user._id });
+                await CustomTask.deleteMany({ userId: user._id });
+                await User.deleteOne({ _id: user._id });
+            }
+            if (inactiveUsers.length > 0) {
+                console.log(`Cleaned up ${inactiveUsers.length} inactive users.`);
+            }
+        } catch (error) {
+            console.error('Error in cleanup cron job:', error);
         }
     });
 };

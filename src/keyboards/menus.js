@@ -11,10 +11,8 @@ const createMainMenuKeyboard = () => {
 const createHelpMenuKeyboard = () => {
     return {
         keyboard: [
-            [{ text: "📚 Конспект лекции" }],
-            [{ text: "✍️ Написать админу" }],
-            [{ text: "❓ Задать вопрос" }],
-            [{ text: "🔙 Назад" }]
+            [{ text: "📚 Конспект лекции" }, { text: "❓ Задать вопрос" }],
+            [{ text: "✍️ Написать админу" }, { text: "🔙 Назад" }]
         ],
         resize_keyboard: true
     };

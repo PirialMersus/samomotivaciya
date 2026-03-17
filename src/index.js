@@ -73,8 +73,15 @@ const startApplication = async () => {
     bot.callbackQuery(/settings:(.+)/, botControllers.handleSettingsCallback);
     bot.callbackQuery(/timezone:(.+)/, botControllers.handleTimezoneCallback);
     bot.callbackQuery(/done:(.+)/, botControllers.handleTaskDoneCallback);
+    bot.callbackQuery(/custom_(done|del):(.+)/, botControllers.handleCustomTaskCallback);
+    bot.callbackQuery(/add_task_(.+)/, botControllers.handleAddTaskCallback);
+    bot.callbackQuery("show_calendar", botControllers.handleAddTaskCallback);
+    bot.callbackQuery(/set_date:(.+)/, botControllers.handleSetDateCallback);
     bot.callbackQuery('show_lecture', botControllers.handleShowLectureCallback);
     bot.callbackQuery('remind_later', botControllers.handleRemindLaterCallback);
+
+    bot.on('message:voice', botControllers.handleVoice);
+    bot.on('message:audio', botControllers.handleVoice);
 
     // Основной прием текстовых сообщений (отчеты и общение)
     bot.on('message:text', botControllers.handleText);
