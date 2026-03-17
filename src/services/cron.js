@@ -42,7 +42,7 @@ const setupCronJobs = (bot) => {
                         }
 
                         if (weekData.taboo?.length > 0) {
-                            msgText += `\n<b>⚠️ ТАБУ:</b>\n☠️ ${weekData.taboo.join('\n☠️ ')}\n`;
+                            msgText += `\n<b>⚠️ ТАБУ:</b>\n⚔️ ${weekData.taboo.join('\n⚔️ ')}\n`;
                         }
 
                         await bot.api.sendMessage(user.telegramId, msgText, { parse_mode: 'HTML' });
