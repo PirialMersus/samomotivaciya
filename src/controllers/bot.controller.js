@@ -48,9 +48,9 @@ const createCalendarKeyboard = (year, month) => {
     const keyboard = new InlineKeyboard();
     const dt = DateTime.local(year, month, 1);
     const monthName = dt.monthLong;
-    
+
     keyboard.text(`<< ${monthName} ${year} >>`, "ignore").row();
-    
+
     const days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
     days.forEach(d => keyboard.text(d, "ignore"));
     keyboard.row();
@@ -66,7 +66,7 @@ const createCalendarKeyboard = (year, month) => {
         keyboard.text(day.toString(), `set_date:${dateStr}`);
         if ((day + firstDayOfWeek - 1) % 7 === 0) keyboard.row();
     }
-    
+
     keyboard.row().text("🔙 Назад", "add_task_date_back");
     return keyboard;
 };
@@ -76,14 +76,15 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
 
-    if (geminiResult.isReport && geminiResult.verdict === "ПРИНЯТО") {
+    if ((geminiResult.isReport && geminiResult.verdict === "ПРИНЯТО") || geminiResult.isTaskSubmission) {
+        const reportStatus = geminiResult.verdict === "ПРИНЯТО" ? 'approved' : 'task_only';
         const newReport = new Report({
             userId: user._id,
             week: user.currentWeek,
             day: user.currentDay,
             text: originalText,
             geminiFeedback: geminiResult.responseText,
-            status: 'approved'
+            status: reportStatus
         });
         await newReport.save();
 
@@ -95,19 +96,21 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
             });
         }
 
-        let dailyTotal = 0;
-        let dailyDone = 0;
+        if (geminiResult.isReport && geminiResult.verdict === "ПРИНЯТО") {
+            let dailyTotal = 0;
+            let dailyDone = 0;
         if (weekData && weekData.daily_routine) {
             weekData.daily_routine.forEach(t => {
                 dailyTotal++;
                 if (user.progress?.get(`${t.id}_${todayStr}`)) dailyDone++;
             });
         }
-        if (dailyTotal > 0 && dailyDone === dailyTotal) {
-            user.totalRoutineDays += 1;
-        }
+            if (dailyTotal > 0 && dailyDone === dailyTotal) {
+                user.totalRoutineDays += 1;
+            }
 
-        user.lastReportDate = todayStr;
+            user.lastReportDate = todayStr;
+        }
 
         const allGlobalTaskIds = weekData?.global_tasks
             ?.filter(t => !t.isPersistent)
@@ -185,7 +188,7 @@ const handleStart = async (ctx) => {
     if (!user) {
         user = new User({ telegramId, username, isRegistered: true });
         await user.save();
-        
+
         const adminId = process.env.CREATOR_ID;
         if (adminId && telegramId.toString() !== adminId) {
             await ctx.api.sendMessage(adminId, `<b>[НОВЫЙ ПОДОПЕЧНЫЙ]</b>\n\nАккаунт: @${username || 'без username'}\nID: <code>${telegramId}</code>\n\n+1 человек в системе.`, { parse_mode: 'HTML' });
@@ -287,7 +290,7 @@ const handleTasks = async (ctx) => {
     }
 
     if (weekData.taboo && weekData.taboo.length > 0) {
-        message += `\n<b>Табу:</b>\n☠️ ${weekData.taboo.join('\n☠️ ')}`;
+        message += `\n<b>Табу:</b>\n${weekData.taboo.join(', ')}`;
     }
 
     const taskKeyboard = new InlineKeyboard();
@@ -423,7 +426,7 @@ const handleSetDateCallback = async (ctx) => {
 
     await ctx.answerCallbackQuery({ text: "Задача добавлена!" });
     await ctx.editMessageText(`Задача «<b>${newTask.title}</b>» добавлена на <b>${dateStr}</b>.`, { parse_mode: 'HTML' });
-    
+
     // Показываем обновленный список если дата совпадает с сегодня
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     if (dateStr === dt.toFormat('yyyy-MM-dd')) {
@@ -593,7 +596,7 @@ const handleText = async (ctx) => {
         await user.save();
         return ctx.reply("Излагай. Только помни: нытье = 50 отжиманий.");
     }
- 
+
     if (text === "✍️ Написать админу") {
         user.isMessagingAdmin = true;
         await user.save();
