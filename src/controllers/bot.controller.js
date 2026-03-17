@@ -290,7 +290,7 @@ const handleTasks = async (ctx) => {
     }
 
     if (weekData.taboo && weekData.taboo.length > 0) {
-        message += `\n<b>Табу:</b>\n${weekData.taboo.join(', ')}`;
+        message += `\n<b>Табу:</b>\n⚔️ ${weekData.taboo.join('\n⚔️ ')}`;
     }
 
     const taskKeyboard = new InlineKeyboard();
