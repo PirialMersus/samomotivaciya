@@ -186,7 +186,7 @@ const handleStart = async (ctx) => {
             await ctx.api.sendMessage(adminId, `<b>[НОВЫЙ ПОДОПЕЧНЫЙ]</b>\n\nАккаунт: @${username || 'без username'}\nID: <code>${telegramId}</code>\n\n+1 человек в системе.`, { parse_mode: 'HTML' });
         }
 
-        await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 12 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Первая неделя началась.`, { reply_markup: keyboard });
+        await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 12 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Первая неделя началась.\n\n❗️ <b>Обязательно прочитай «📜 Правила игры» в разделе «ℹ️ Помощь и Правила».</b>`, { reply_markup: keyboard, parse_mode: 'HTML' });
     } else if (user.frozen && !isCreator) {
         const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
         await ctx.reply(`Ты заморожен за невыполнение требований или нытье. Твой доступ будет восстановлен автоматически: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
@@ -444,14 +444,14 @@ const handleShowLectureCallback = async (ctx) => {
     const weekData = methodology.weeks[user.currentWeek];
     if (!weekData || !weekData.lecture_notes) {
         if (ctx.callbackQuery) {
-            return ctx.answerCallbackQuery({ text: "Конспект пока не готов." });
+            return ctx.answerCallbackQuery({ text: "Пояснение пока не готово." });
         } else {
-            return ctx.reply("Конспект пока не готов.");
+            return ctx.reply("Пояснение пока не готово.");
         }
     }
 
     if (ctx.callbackQuery) await ctx.answerCallbackQuery();
-    await ctx.reply(`<b>📚 КОНСПЕКТ НЕДЕЛИ ${user.currentWeek}</b>\n\n${weekData.lecture_notes}`, { parse_mode: 'HTML' });
+    await ctx.reply(`<b>📚 ПОЯСНЕНИЕ К НЕДЕЛЕ ${user.currentWeek}</b>\n\n${weekData.lecture_notes}`, { parse_mode: 'HTML' });
 };
 
 const handleSettings = async (ctx) => {
@@ -564,8 +564,8 @@ const handleText = async (ctx) => {
     if (text === "⚙️ Настройки") return handleSettings(ctx);
     if (text === "📚 Задания") return handleTasks(ctx);
     if (text === "📈 Прогресс") return handleProgress(ctx);
-    if (text === "🧘 Сэнсэй, помоги!") {
-        return ctx.reply("Это раздел помощи. Здесь ты можешь изучить теорию текущей недели или задать вопрос Сэнсэю напрямую.", {
+    if (text === "ℹ️ Помощь и Правила") {
+        return ctx.reply("База знаний. Здесь ты можешь прочитать теорию текущей недели, вспомнить правила бота или написать админу. А чтобы задать вопрос мне — просто напиши обычное сообщение.", {
             reply_markup: createHelpMenuKeyboard()
         });
     }
@@ -592,12 +592,11 @@ const handleText = async (ctx) => {
         });
     }
 
-    if (text === "📚 Конспект лекции") return handleShowLectureCallback(ctx);
+    if (text === "📚 Пояснение заданий") return handleShowLectureCallback(ctx);
 
-    if (text === "❓ Задать вопрос") {
-        user.isAskingHelp = true;
-        await user.save();
-        return ctx.reply("Излагай. Только помни: нытье = 50 отжиманий.");
+    if (text === "📜 Правила игры") {
+        const rulesText = `<b>📜 ПРАВИЛА ИГРЫ:</b>\n\n1. <b>Задания:</b> Жми «📚 Задания» внизу. Там твой план на неделю: ежедневная рутина и глобальные цели. Рутину отмечай прямо там кнопками со статусами.\n2. <b>Отчеты:</b> Каждый вечер присылай мне <b>отчет</b> (текстом или голосовым). Расскажи, что сделал за день по рутине и какие глобальные задачи закрыл. Я оценю твой прогресс.\n3. <b>Переход на новую неделю:</b> Чтобы перейти, нужно закрыть <b>все</b> глобальные задачи и <b>хотя бы 1 день</b> выполнить рутину на 100%.\n4. <b>Наказания:</b> За игнор отчетов, невыполнение или нытье — даю страйки. 3 страйка — заморозка бота на 24 часа.\n\n<i>Остались вопросы? Просто напиши мне сообщение текстом/голосом, либо напиши админу (@pirial_mersus), он всё разъяснит.</i>`;
+        return ctx.reply(rulesText, { parse_mode: 'HTML' });
     }
 
     if (text === "✍️ Написать админу") {
@@ -624,10 +623,7 @@ const handleText = async (ctx) => {
         }
     }
 
-    if (user.isAskingHelp) {
-        user.isAskingHelp = false;
-        await user.save();
-    }
+
 
     if (user.currentWeek === 8) {
         const eurMatch = text.match(/^\s*(\d+)\s*(евро|eur|€)?\s*$/i);
@@ -668,10 +664,7 @@ const handleVoice = async (ctx) => {
         return ctx.reply("Голосовые для админа пока не поддерживаются. Напиши текстом.");
     }
 
-    if (user.isAskingHelp) {
-        user.isAskingHelp = false;
-        await user.save();
-    }
+
 
     try {
         const voiceFile = ctx.message.voice || ctx.message.audio;

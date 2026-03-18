@@ -2,7 +2,7 @@ const createMainMenuKeyboard = () => {
     return {
         keyboard: [
             [{ text: "📚 Задания" }, { text: "📈 Прогресс" }],
-            [{ text: "🧘 Сэнсэй, помоги!" }, { text: "⚙️ Настройки" }]
+            [{ text: "ℹ️ Помощь и Правила" }, { text: "⚙️ Настройки" }]
         ],
         resize_keyboard: true
     };
@@ -11,7 +11,7 @@ const createMainMenuKeyboard = () => {
 const createHelpMenuKeyboard = () => {
     return {
         keyboard: [
-            [{ text: "📚 Конспект лекции" }, { text: "❓ Задать вопрос" }],
+            [{ text: "📜 Правила игры" }, { text: "📚 Пояснение заданий" }],
             [{ text: "✍️ Написать админу" }, { text: "🔙 Назад" }]
         ],
         resize_keyboard: true
