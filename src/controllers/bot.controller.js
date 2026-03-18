@@ -217,8 +217,15 @@ const handleProgress = async (ctx) => {
     const strikes = user.strikes || 0;
     const hasReportToday = user.lastReportDate === todayStr;
 
+    const allGlobalTaskIds = weekData?.global_tasks
+        ?.filter(t => !t.isPersistent)
+        .map(t => t.id) || [];
+    const doneGlobalTasks = allGlobalTaskIds.filter(id => user.completedGlobalTasks.includes(id)).length;
+    const totalGlobalTasks = allGlobalTaskIds.length;
+
     let text = `<b>📈 ПРОГРЕСС</b>\n\nНеделя: ${user.currentWeek} | День: ${user.currentDay}\n`;
     text += `Задач на сегодня выполнено: ${doneTasks} из ${totalTasks}\n`;
+    text += `Глобальных задач за неделю: ${doneGlobalTasks} из ${totalGlobalTasks}\n`;
     text += `Отчёт за сегодня: ${hasReportToday ? '✅ Сдан' : '❌ Не сдан'}\n`;
     text += `Страйков за косяки и нытье: ${strikes}/3\n`;
 
