@@ -27,8 +27,8 @@ const reportSchema = new mongoose.Schema({
         default: '',
     },
     status: {
-        type: String, // e.g., 'pending', 'approved', 'rejected'
-        enum: ['pending', 'approved', 'rejected'],
+        type: String, // e.g., 'pending', 'approved_daily', 'approved_task', 'chat', 'rejected'
+        enum: ['pending', 'approved', 'rejected', 'approved_daily', 'approved_task', 'chat'],
         default: 'pending'
     }
 }, {

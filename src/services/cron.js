@@ -7,8 +7,8 @@ import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
 
 const setupCronJobs = (bot) => {
-    // Единый джоб, работающий каждую минуту
-    cron.schedule('* * * * *', async () => {
+    // Единый джоб, работающий каждые 5 минут
+    cron.schedule('*/5 * * * *', async () => {
         try {
             const users = await User.find({ frozen: false });
             for (const user of users) {
@@ -79,8 +79,8 @@ const setupCronJobs = (bot) => {
 
                     // Рандомные проверки днем (Неделя 2 и 3)
                     if (dt.hour >= 10 && dt.hour <= 20) {
-                        // Шанс примерно раз в день (1 из 600 минут)
-                        if (Math.random() < 0.0015) {
+                        // Шанс примерно раз в день (с вероятностью 0.0075 каждые 5 минут)
+                        if (Math.random() < 0.0075) {
                             if (user.currentWeek === 2) {
                                 await bot.api.sendMessage(user.telegramId, "<b>Сэнсэй видит всё.</b> Ты сейчас в лифте или на лестнице? Оправданий не принимаю.", { parse_mode: 'HTML' });
                             } else if (user.currentWeek === 3) {
@@ -178,7 +178,13 @@ const setupCronJobs = (bot) => {
                         const dtYesterday = dt.minus({ days: 1 });
                         const yesterdayStr = dtYesterday.toFormat('yyyy-MM-dd');
                         const weekData = methodology.weeks[user.currentWeek];
-                        if (!weekData) continue;
+                        
+                        user.currentDay = (user.currentDay || 1) + 1;
+
+                        if (!weekData) {
+                            await user.save();
+                            continue;
+                        }
 
                         let hasUndoneRoutine = false;
                         for (const task of weekData.daily_routine) {
@@ -199,13 +205,25 @@ const setupCronJobs = (bot) => {
                             } else {
                                 await bot.api.sendMessage(user.telegramId, `<b>СТРАЙК!</b> Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes} страйка(ов) из 3 максимальных. Дальше — бан.`, { parse_mode: 'HTML' });
                             }
-                            await user.save();
                         }
+                        
+                        await user.save();
                     }
                 } catch (e) {
                     console.error(`Failed cron for user ${user.telegramId}`, e.message);
                 }
             }
+            
+            // Пинг Healthchecks для мониторинга работоспособности
+            try {
+                const https = await import('https');
+                https.get('https://hc-ping.com/083eb4e3-8038-43c4-aada-e80c6359b0b7').on('error', (e) => {
+                    console.error('Healthcheck ping error:', e.message);
+                });
+            } catch (err) {
+                console.error('Failed to send healthcheck ping:', err.message);
+            }
+
         } catch (error) {
             console.error('Error in minute cron job:', error);
         }

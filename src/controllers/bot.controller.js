@@ -76,77 +76,69 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
 
-    if ((geminiResult.isReport && geminiResult.verdict === "ПРИНЯТО") || geminiResult.isTaskSubmission) {
-        const reportStatus = geminiResult.verdict === "ПРИНЯТО" ? 'approved' : 'task_only';
-        const newReport = new Report({
-            userId: user._id,
-            week: user.currentWeek,
-            day: user.currentDay,
-            text: originalText,
-            geminiFeedback: geminiResult.responseText,
-            status: reportStatus
+    let reportStatus = 'chat';
+    if (geminiResult.isDailyReportAccepted) reportStatus = 'approved_daily';
+    else if (geminiResult.completedTasks.length > 0) reportStatus = 'approved_task';
+
+    const newReport = new Report({
+        userId: user._id,
+        week: user.currentWeek,
+        day: user.currentDay,
+        text: originalText,
+        geminiFeedback: geminiResult.responseText,
+        status: reportStatus
+    });
+    await newReport.save();
+
+    if (geminiResult.completedTasks.length > 0) {
+        geminiResult.completedTasks.forEach(taskId => {
+            if (!user.completedGlobalTasks.includes(taskId)) {
+                user.completedGlobalTasks.push(taskId);
+            }
         });
-        await newReport.save();
+    }
 
-        if (geminiResult.completedTasks.length > 0) {
-            geminiResult.completedTasks.forEach(taskId => {
-                if (!user.completedGlobalTasks.includes(taskId)) {
-                    user.completedGlobalTasks.push(taskId);
-                }
-            });
-        }
-
-        if (geminiResult.isReport && geminiResult.verdict === "ПРИНЯТО") {
-            let dailyTotal = 0;
-            let dailyDone = 0;
+    if (geminiResult.isDailyReportAccepted) {
+        let dailyTotal = 0;
+        let dailyDone = 0;
         if (weekData && weekData.daily_routine) {
             weekData.daily_routine.forEach(t => {
                 dailyTotal++;
                 if (user.progress?.get(`${t.id}_${todayStr}`)) dailyDone++;
             });
         }
-            if (dailyTotal > 0 && dailyDone === dailyTotal) {
-                user.totalRoutineDays += 1;
-            }
-
-            user.lastReportDate = todayStr;
+        if (dailyTotal > 0 && dailyDone === dailyTotal) {
+            user.totalRoutineDays += 1;
         }
 
-        const allGlobalTaskIds = weekData?.global_tasks
-            ?.filter(t => !t.isPersistent)
-            .map(t => t.id) || [];
-        const isAllGlobalDone = allGlobalTaskIds.every(id => user.completedGlobalTasks.includes(id));
-        const isAnyRoutineDone = user.totalRoutineDays >= 1;
+        user.lastReportDate = todayStr;
+    }
 
-        if (isAllGlobalDone && isAnyRoutineDone) {
-            user.currentWeek += 1;
-            user.currentDay = 1;
-            user.completedGlobalTasks = [];
-            user.totalRoutineDays = 0;
-            await user.save();
-            await ctx.reply(`<b>ВНИМАНИЕ!</b> Ты закрыл все задачи. Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
-        } else {
+    const allGlobalTaskIds = weekData?.global_tasks
+        ?.filter(t => !t.isPersistent)
+        .map(t => t.id) || [];
+    
+    // Переход произойдет только если есть хотя бы 1 глобальная задача и она(и) выполнена, + рутина. Либо если глобальных нет (что вряд ли), то `every` вернет true
+    const isAllGlobalDone = allGlobalTaskIds.length > 0 ? allGlobalTaskIds.every(id => user.completedGlobalTasks.includes(id)) : true;
+    const isAnyRoutineDone = user.totalRoutineDays >= 1;
+
+    if (isAllGlobalDone && isAnyRoutineDone) {
+        user.currentWeek += 1;
+        user.currentDay = 1;
+        user.completedGlobalTasks = [];
+        user.totalRoutineDays = 0;
+        await user.save();
+        await ctx.reply(`<b>ВНИМАНИЕ!</b> Ты закрыл все задачи. Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
+    } else {
+        if (geminiResult.isDailyReportAccepted || geminiResult.completedTasks.length > 0) {
             let statusMsg = "Засчитано. ";
             if (!isAllGlobalDone) {
                 const remainingTasks = allGlobalTaskIds.filter(id => !user.completedGlobalTasks.includes(id));
                 statusMsg += `Остались хвосты по глобал-задачам (${remainingTasks.length} шт). `;
             }
             if (!isAnyRoutineDone) statusMsg += `Нужен хотя бы один день 100% рутины. `;
-            await user.save();
             await ctx.reply(`<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
         }
-    } else if (geminiResult.isReport && geminiResult.verdict === "ОТКЛОНЕНО") {
-        const newReport = new Report({
-            userId: user._id,
-            week: user.currentWeek,
-            day: user.currentDay,
-            text: originalText,
-            geminiFeedback: geminiResult.responseText,
-            status: 'rejected'
-        });
-        await newReport.save();
-        await user.save();
-    } else {
         await user.save();
     }
 
@@ -349,13 +341,17 @@ const handleTaskDoneCallback = async (ctx) => {
     await user.save();
 
     await ctx.answerCallbackQuery({ text: "Принято!" });
-    await ctx.reply(`<b>Сэнсэй:</b> Хвалю за дисциплину! Продолжай.`, { parse_mode: 'HTML' });
 
-    try {
-        await handleTasks(ctx);
-    } catch (e) {
-        if (e.description?.includes("message is not modified")) return;
-        console.error(e);
+    if (ctx.callbackQuery.message.text && ctx.callbackQuery.message.text.startsWith("Задача:")) {
+        await ctx.editMessageText(`${ctx.callbackQuery.message.text.split('\n')[0]}\n\n<b>Выполнена ✅</b>`, { parse_mode: 'HTML' });
+    } else {
+        await ctx.reply(`<b>Сэнсэй:</b> Хвалю за дисциплину! Продолжай.`, { parse_mode: 'HTML' });
+        try {
+            await handleTasks(ctx);
+        } catch (e) {
+            if (e.description?.includes("message is not modified")) return;
+            console.error(e);
+        }
     }
 };
 

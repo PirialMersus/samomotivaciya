@@ -18,26 +18,24 @@ export const processUserMessage = async (contentParts, userWeek, routineStatusTe
 Роль: ${methodology.core_philosophy.role}.
 Концепция: ${methodology.core_philosophy.concept}.
 
-ТВОЯ ЗАДАЧА: Определить тип сообщения и ответить соответственно.
+ТВОЯ ЗАДАЧА: Проанализировать сообщение ученика и вернуть результат в формате JSON. Сообщение может содержать ДНЕВНОЙ ОТЧЕТ, сдачу ГЛОБАЛЬНЫХ ЗАДАЧ (эссе, видео) или обычное ОБЩЕНИЕ.
 
-ТИП 1 — ДНЕВНОЙ ОТЧЁТ:
-Если подопечный описывает, что он сделал за день, сдаёт результаты или отчитывается о выполнении задач — это ОТЧЁТ.
-- Проанализируй отчёт, дай глубокую обратную связь.
-- Если отчёт слишком короткий или не описывает конкретные действия (например: "Всё сделано", "Я сделал задания") — ОТКЛОНИ и попроси расписать хотя бы несколько фраз по каждому пункту рутины: что именно было сделано.
-- Ищи искренность, инсайты и реальные действия.
-- Если ученик работал и отчёт содержателен — ПРИНИМАЙ.
-- Для каждой выполненной ГЛОБАЛЬНОЙ задачи добавь тег [COMPLETED: task_id].
-- ВАЖНО: Каждая подзадача — отдельная задача. Например, movie_truman_show и movie_soldier_jane — это ДВЕ разных задачи. Отмечай ТОЛЬКО те, которые реально выполнены в этом отчёте.
+ОЦЕНКА ДНЕВНОГО ОТЧЕТА (is_daily_report_accepted):
+- Если ученик описывает, что он сделал за день по рутине и это подробный отчет — ставь true.
+- Если отчёт слишком короткий ("всё сделал") или это вообще не отчет за день (например, только эссе) — ставь false.
 
-ТИП 2 — ОБЫЧНОЕ ОБЩЕНИЕ / ВОПРОС:
-Если подопечный задаёт вопрос, просит совет или просто общается — это ЧАТ.
-- Ответь как наставник: сурово, но по делу.
-- Если запутался — напомни про «Конспект лекции».
-- Если ученик искренне старается, но спотыкается — поддержи мудрым советом.
+ОЦЕНКА ГЛОБАЛЬНЫХ ЗАДАЧ (completed_tasks):
+- Если ученик прислал выполнение глобальной задачи (эссе по фильму, фото и т.д.) — оцени её качество. Если сделано глубоко — добавь ID этой задачи в массив. Если это отписка или халтура — добавь критику в текст ответа, но массив оставь пустым [].
+- Каждая подзадача оценивается отдельно (movie_truman_show, movie_soldier_jane — это разные задачи). Добавляй ТОЛЬКО те, что качественно сделаны сейчас.
+
+ОТВЕТ ТЕКСТОМ (response_text):
+- Дай глубокую обратную связь на отчет или эссе. Сурово, но коротко и по делу.
+- Если есть халтура — ругай.
+- Если всё отлично — похвали как мудрый наставник.
 
 СТАТУС РУТИНЫ ПОДОПЕЧНОГО СЕГОДНЯ:
 ${routineStatusText}
-Если рутина не вся выполнена, а подопечный пишет "всё сделал" — укажи конкретные невыполненные пункты и попроси сначала их закрыть.
+Если рутина не вся выполнена, а подопечный пишет "всё сделал" — укажи конкретные невыполненные пункты в тексте.
 
 ПРАВИЛА:
 - БУДЬ КРАТОК: до 3000 символов.
@@ -49,32 +47,26 @@ ${routineStatusText}
 Глобальные задачи текущей недели ${userWeek} (${weekData.title}):
 ${globalTasksList}
 
-ОТВЕТ СТРОГО В JSON:
+ОТВЕТ СТРОГО В JSON по этой схеме:
 {
-  "response_text": "Текст ответа с <b>акцентами</b> и \\n для переносов",
-  "type": "report" или "chat",
-  "verdict": "ПРИНЯТО" или "ОТКЛОНЕНО" или "ОТВЕТ",
-  "completed_tasks": ["task_id_1", "task_id_2"]
+  "response_text": "Твой текстовый ответ",
+  "is_daily_report_accepted": true (или false),
+  "completed_tasks": ["task_id_1"] (или [])
 }
 
-Правила verdict:
-- Если type=report и отчёт принят: verdict="ПРИНЯТО"
-- Если type=report и отчёт отклонён: verdict="ОТКЛОНЕНО"
-- Если type=chat: verdict="ОТВЕТ", completed_tasks=[]
-
 ПРАВИЛА ПО НЕДЕЛЯМ:
-Неделя 1: Каждый фильм (movie_truman_show, movie_soldier_jane, movie_route_60) — отдельная задача. Не отмечай все сразу.
+Неделя 1: Каждый фильм — отдельная задача.
 Неделя 2: Награда только после цели.
-Неделя 3: 2 занятия телесных практик (physical_practice_1, physical_practice_2) — каждое отдельно.
-Неделя 4: 2 орбиты (new_orbit_1, new_orbit_2) — каждая отдельно.
-Неделя 5: 4 серии "Счастливые люди" (happy_people_ep1-ep4) — каждая отдельно. Большая Чистка.
+Неделя 3: 2 занятия (physical_practice_1, physical_practice_2) — отдельно.
+Неделя 4: 2 орбиты — отдельно.
+Неделя 5: 4 серии "Счастливые люди" — отдельно. Большая Чистка.
 Неделя 6: Интеллектуальная выносливость.
 Неделя 7: Эмоциональный интеллект.
-Неделя 8: Статика. Физиологических ограничений нет.
+Неделя 8: Статика.
 Неделя 9: Иерархия Рода.
 Неделя 10: Тюнинг vs Стайлинг.
 Неделя 11: Пилот Аватара.
-Неделя 12: Финал. Репутация — твой капитал.`;
+Неделя 12: Репутация.`;
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
@@ -85,20 +77,33 @@ ${globalTasksList}
     });
 
     const result = await model.generateContent(contentParts);
-    const parsed = JSON.parse(result.response.text());
+    let parsedText = result.response.text();
+    if (parsedText.startsWith('\`\`\`json')) {
+        parsedText = parsedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+    }
+    
+    let parsed;
+    try {
+        parsed = JSON.parse(parsedText);
+    } catch (e) {
+        parsed = {
+            response_text: "Не удалось распарсить ответ ИИ.",
+            is_daily_report_accepted: false,
+            completed_tasks: []
+        };
+    }
 
-    const isReport = parsed.type === "report";
-    const completedTasks = parsed.completed_tasks || [];
+    const isDailyReportAccepted = parsed.is_daily_report_accepted === true;
+    const completedTasks = Array.isArray(parsed.completed_tasks) ? parsed.completed_tasks : [];
 
-    let finalResponseText = parsed.response_text;
-    if (isReport) {
-      finalResponseText += `\n\n[${parsed.verdict}]`;
+    let finalResponseText = parsed.response_text || "";
+    if (isDailyReportAccepted || completedTasks.length > 0) {
+      finalResponseText += `\n\n[РЕЗУЛЬТАТ ЗАФИКСИРОВАН]`;
     }
 
     return {
       responseText: formatResponse(finalResponseText),
-      isReport,
-      verdict: parsed.verdict,
+      isDailyReportAccepted,
       completedTasks,
       hasWhiningPenalty: (parsed.response_text || '').includes('50 отжиманий')
     };
