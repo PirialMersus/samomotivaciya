@@ -82,8 +82,8 @@ const startApplication = async () => {
 
     bot.on('message:voice', botControllers.handleVoice);
     bot.on('message:audio', botControllers.handleVoice);
+    bot.on('message:photo', botControllers.handlePhoto);
 
-    // Основной прием текстовых сообщений (отчеты и общение)
     bot.on('message:text', botControllers.handleText);
 
     // Глобальный обработчик ошибок

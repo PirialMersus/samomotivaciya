@@ -131,12 +131,19 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
         await ctx.reply(`<b>ВНИМАНИЕ!</b> Ты закрыл все задачи. Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
     } else {
         if (geminiResult.isDailyReportAccepted || geminiResult.completedTasks.length > 0) {
-            let statusMsg = "Засчитано. ";
+            let statusMsg = "засчитано.\n";
             if (!isAllGlobalDone) {
-                const remainingTasks = allGlobalTaskIds.filter(id => !user.completedGlobalTasks.includes(id));
-                statusMsg += `Остались хвосты по глобал-задачам (${remainingTasks.length} шт). `;
+                const remainingTasks = weekData?.global_tasks
+                    ?.filter(t => !t.isPersistent && !user.completedGlobalTasks.includes(t.id))
+                    .map(t => t.title) || [];
+                
+                if (remainingTasks.length > 0) {
+                    statusMsg += `\nДля перехода на следующую неделю нужно выполнить:\n— ${remainingTasks.join('\n— ')}`;
+                }
             }
-            if (!isAnyRoutineDone) statusMsg += `Нужен хотя бы один день 100% рутины. `;
+            if (!isAnyRoutineDone) {
+                statusMsg += `\n\nМинимум один день 100% рутины.`;
+            }
             await ctx.reply(`<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
         }
         await user.save();
@@ -521,10 +528,12 @@ const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText) => 
     const todayStr = dt.toFormat('yyyy-MM-dd');
 
     const routineStatusText = buildRoutineStatusText(user, weekData, todayStr);
+    const currentTimeStr = dt.toFormat('HH:mm');
+    const enrichedRoutineStatus = `Текущее время: ${currentTimeStr}\n${routineStatusText}`;
 
     const loadingMsg = await ctx.reply("⏳ <b>Сэнсэй анализирует...</b>", { parse_mode: 'HTML' });
 
-    const geminiResult = await geminiService.processUserMessage(contentParts, user.currentWeek, routineStatusText);
+    const geminiResult = await geminiService.processUserMessage(contentParts, user.currentWeek, enrichedRoutineStatus);
 
     try {
         await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText, { parse_mode: 'HTML' });
@@ -560,6 +569,12 @@ const handleText = async (ctx) => {
     }
 
     const text = ctx.message.text;
+
+    const isMenuButton = ["⚙️ Настройки", "📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "📚 Пояснение заданий", "📜 Правила игры", "🔙 Назад"].includes(text);
+    if (isMenuButton && user.isMessagingAdmin) {
+        user.isMessagingAdmin = false;
+        await user.save();
+    }
 
     if (text === "⚙️ Настройки") return handleSettings(ctx);
     if (text === "📚 Задания") return handleTasks(ctx);
@@ -694,6 +709,64 @@ const handleVoice = async (ctx) => {
     }
 };
 
+const handlePhoto = async (ctx) => {
+    const user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user) return ctx.reply("Жми /start.");
+
+    user.lastActivityAt = new Date();
+    await user.save();
+
+    const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
+    if (user.frozen && !isCreator) {
+        const now = DateTime.now().toJSDate();
+        if (user.unfreezeDate && now >= user.unfreezeDate) {
+            user.frozen = false;
+            user.strikes = 0;
+            user.unfreezeDate = null;
+            await user.save();
+        } else {
+            return ctx.reply("Замороженные права голоса не имеют.");
+        }
+    }
+
+    if (user.isMessagingAdmin) {
+        user.isMessagingAdmin = false;
+        await user.save();
+        return ctx.reply("Фото для админа пока не поддерживаются. Напиши текстом.");
+    }
+
+    try {
+        const photoSizes = ctx.message.photo;
+        if (!photoSizes || photoSizes.length === 0) return ctx.reply("Не удалось получить фото.");
+
+        const largestPhoto = photoSizes[photoSizes.length - 1];
+        const file = await ctx.api.getFile(largestPhoto.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+        const photoBase64 = await downloadFileAsBase64(fileUrl);
+
+        const captionText = ctx.message.caption || '';
+
+        const contentParts = [
+            {
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: photoBase64
+                }
+            },
+            captionText
+                ? `Подопечный прислал фото с подписью: "${captionText}". Проанализируй изображение и текст.`
+                : "Подопечный прислал фото без подписи. Проанализируй изображение и определи, что он хочет показать."
+        ];
+
+        const originalText = captionText ? `[Фото] ${captionText}` : "[Фото]";
+        await sendToGeminiAndRespond(ctx, user, contentParts, originalText);
+    } catch (error) {
+        console.error("Photo processing error:", error);
+        await ctx.reply("Ошибка при обработке фото. Попробуй ещё раз или опиши словами.");
+    }
+};
+
 const handleMyChatMember = async (ctx) => {
     try {
         const newStatus = ctx.myChatMember.new_chat_member.status;
@@ -714,5 +787,5 @@ export {
     handleStart, handleProgress, handleSettings, handleSettingsCallback,
     handleTimezoneCallback, handleTasks, handleTaskDoneCallback,
     handleShowLectureCallback, handleRemindLaterCallback,
-    handleText, handleVoice, handleMyChatMember
+    handleText, handleVoice, handlePhoto, handleMyChatMember
 };
