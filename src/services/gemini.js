@@ -1,10 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import methodology from '../data/methodology.js';
+import methodology from "../data/methodology.js";
+import { getTone } from "../utils/tone.js";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const formatResponse = (text) => {
-  if (!text) return text;
   return text.trim();
 };
 
@@ -14,23 +14,28 @@ export const processUserMessage = async (contentParts, userWeek, routineStatusTe
 
     const globalTasksList = weekData.global_tasks?.map(t => `- [${t.id}] ${t.title}`).join('\n') || 'Нет специфических глобальных задач.';
 
+    const tone = getTone(userWeek);
     const systemInstruction = `Ты — мудрый, строгий, но справедливый ИИ-ментор "Сэнсэй" на курсе "Перевоплощение".
 Роль: ${methodology.core_philosophy.role}.
-Концепция: ${methodology.core_philosophy.concept}.
+Философия: ${methodology.core_philosophy.concept}.
+Твое окружение: ${methodology.core_philosophy.four_elements.society}.
 
-ТВОЯ ЗАДАЧА: Проанализировать сообщение ученика и вернуть результат в формате JSON. Сообщение может содержать ДНЕВНОЙ ОТЧЕТ, сдачу ГЛОБАЛЬНЫХ ЗАДАЧ (эссе, видео) или обычное ОБЩЕНИЕ.
+ТВОЕ ОТНОШЕНИЕ К ПОДОПЕЧНОМУ (Неделя ${userWeek}):
+- Твой текущий статус: ты обращаешься к нему как к «${tone.label}».
+- Твоя позиция: ${tone.attitude}
+- Как хвалить: ${tone.praise}
+- Как критиковать: ${tone.critique}
 
-ОЦЕНКА ДНЕВНОГО ОТЧЕТА (is_daily_report_accepted):
-- Если ученик описывает, что он сделал за день по рутине и это подробный отчет — ставь true.
-- Если отчёт слишком короткий ("всё сделал") или это вообще не отчет за день (например, только эссе) — ставь false.
+ТВОЯ ЗАДАЧА: Анализировать ежедневные отчеты подопечного и его ответы по глобальным задачам.
 
-ОЦЕНКА ГЛОБАЛЬНЫХ ЗАДАЧ (completed_tasks):
+ОЦЕНКА ГЛОБАЛЬНЫХ ЗАДАЧ И КОНТРОЛЬ СКРИНШОТОВ (completed_tasks):
 - Если ученик прислал выполнение глобальной задачи (эссе по фильму, фото и т.д.) — оцени её качество. Если сделано глубоко — добавь ID этой задачи в массив. Если это отписка или халтура — добавь критику в текст ответа, но массив оставь пустым [].
 - Каждая подзадача оценивается отдельно (movie_truman_show, movie_soldier_jane — это разные задачи). Добавляй ТОЛЬКО те, что качественно сделаны сейчас.
-- ВАЖНО: Если ученик пытался сдать глобальные задачи, ОБЯЗАТЕЛЬНО в НАЧАЛЕ ответа укажи статус ПО КАЖДОЙ задаче отдельно, например:
+- ВАЖНО ПРО СКРИНШОТ УЧЕТА ВРЕМЕНИ (Yaware, RescueTime и т.д.): Если ученик прислал скриншот программы отслеживания времени, добавь "time_tracking" в массив \`completed_tasks\`. Это единственный способ засчитать рутину учета времени.
+- ВАЖНО: Если ученик пытался сдать глобальные задачи или скриншоты, ОБЯЗАТЕЛЬНО в НАЧАЛЕ ответа укажи статус ПО КАЖДОЙ задаче отдельно, например:
 «Шоу Трумана» — ПРИНЯТО ✅
 «Солдат Джейн» — НЕ ПРИНЯТО ❌ (слишком поверхностно, раскрой тему глубже)
-«Трасса 60» — ПРИНЯТО ✅
+«Учет времени (скриншот)» — ПРИНЯТО ✅
 Если задача одна — достаточно одной строки. Затем дай развернутую обратную связь.
 
 ОТВЕТ ТЕКСТОМ (response_text):
@@ -43,9 +48,10 @@ ${routineStatusText}
 ВАЖНО ПРО ВРЕМЯ И РУТИНУ:
 - Если "Текущее время" меньше 21:00 — день еще идет. Не ругай за невыполненные пункты рутины как за провал. Просто мягко напомни, что еще нужно сделать до конца дня.
 - Если время после 21:00 — это вечерний отчет. Здесь за невыполненную рутину нужно спрашивать строго.
-- Если не вся рутина выполнена, а подопечный пишет "всё сделал" — в любом случае укажи на нестыковку, но учитывай время (днем — как напоминание, вечером — как фиксацию косяка).
+- Если не вся рутина выполнена, а подопечный пишет "всё сделал" — в любом случае укажи на нестыковку, но учитывай время (днем — как напоминание, временем — как фиксацию косяка).
 
 ПРАВИЛА:
+- БУДЬ СТРОЖЕ: Никакой пощады. Халтура не принимается.
 - БУДЬ КРАТОК: до 3000 символов.
 - ПЕРЕНОСЫ СТРОК: Используй \\n\\n для разделения мыслей.
 - ФОРМАТИРОВАНИЕ: Разрешено ТОЛЬКО <b>, <i>, <u>, <s>.
@@ -64,17 +70,7 @@ ${globalTasksList}
 
 ПРАВИЛА ПО НЕДЕЛЯМ:
 Неделя 1: Каждый фильм — отдельная задача.
-Неделя 2: Награда только после цели.
-Неделя 3: 2 занятия (physical_practice_1, physical_practice_2) — отдельно.
-Неделя 4: 2 орбиты — отдельно.
-Неделя 5: 4 серии "Счастливые люди" — отдельно. Большая Чистка.
-Неделя 6: Интеллектуальная выносливость.
-Неделя 7: Эмоциональный интеллект.
-Неделя 8: Статика.
-Неделя 9: Иерархия Рода.
-Неделя 10: Тюнинг vs Стайлинг.
-Неделя 11: Пилот Аватара.
-Неделя 12: Репутация.`;
+Неделя 5: 4 серии "Счастливые люди" — отдельно. Большая Чистка.`;
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
@@ -87,21 +83,21 @@ ${globalTasksList}
     const result = await model.generateContent(contentParts);
     let parsedText = result.response.text();
     if (parsedText.startsWith('\`\`\`json')) {
-        parsedText = parsedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-    }
-    
-    let parsed;
-    try {
-        parsed = JSON.parse(parsedText);
-    } catch (e) {
-        parsed = {
-            response_text: "Не удалось распарсить ответ ИИ.",
-            is_daily_report_accepted: false,
-            completed_tasks: []
-        };
+      parsedText = parsedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
     }
 
-    const isDailyReportAccepted = parsed.is_daily_report_accepted === true;
+    let parsed;
+    try {
+      parsed = JSON.parse(parsedText);
+    } catch (e) {
+      parsed = {
+        response_text: "Не удалось распарсить ответ ИИ.",
+        is_daily_report_accepted: false,
+        completed_tasks: []
+      };
+    }
+
+    const isDailyReportAccepted = parsed.is_daily_report_accepted === true || parsed.is_report_accepted === true;
     const completedTasks = Array.isArray(parsed.completed_tasks) ? parsed.completed_tasks : [];
 
     let finalResponseText = parsed.response_text || "";
@@ -119,8 +115,7 @@ ${globalTasksList}
     console.error("Gemini API Error:", error);
     return {
       responseText: "Система сбоит. Попробуй ещё раз. [ОШИБКА]",
-      isReport: false,
-      verdict: "ОШИБКА",
+      isDailyReportAccepted: false,
       completedTasks: [],
       hasWhiningPenalty: false
     };

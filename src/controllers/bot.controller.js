@@ -1,12 +1,15 @@
 import User from '../models/User.js';
 import Report from '../models/Report.js';
 import CustomTask from '../models/CustomTask.js';
-import methodology from '../data/methodology.js';
+import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
 import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
 import * as geminiService from '../services/gemini.js';
+import { getTasksMessage } from '../services/task.service.js';
+import { getTone } from '../utils/tone.js';
 import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
 import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
+import { createCalendarKeyboard } from '../keyboards/calendar.js';
 import https from 'https';
 import http from 'http';
 
@@ -22,12 +25,14 @@ const downloadFileAsBase64 = (fileUrl) => {
     });
 };
 
-const buildRoutineStatusText = (user, weekData, todayStr) => {
-    if (!weekData || !weekData.daily_routine) return "Рутина не определена для этой недели.";
+const buildRoutineStatusText = (user, weekData, todayStr, weekNumber) => {
+    if (!weekData) return "Рутина не определена для этой недели.";
 
+    const fullDailyRoutine = getFullDailyRoutine(weekNumber);
+    const fullTaboo = getFullTaboo(weekNumber);
     const undoneTasks = [];
     const doneTasks = [];
-    weekData.daily_routine.forEach(t => {
+    [...fullDailyRoutine, ...fullTaboo].forEach(t => {
         const isDone = user.progress?.get(`${t.id}_${todayStr}`);
         if (isDone) {
             doneTasks.push(t.title);
@@ -42,33 +47,6 @@ const buildRoutineStatusText = (user, weekData, todayStr) => {
     else statusText += "Вся рутина выполнена.";
 
     return statusText;
-};
-
-const createCalendarKeyboard = (year, month) => {
-    const keyboard = new InlineKeyboard();
-    const dt = DateTime.local(year, month, 1);
-    const monthName = dt.monthLong;
-
-    keyboard.text(`<< ${monthName} ${year} >>`, "ignore").row();
-
-    const days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
-    days.forEach(d => keyboard.text(d, "ignore"));
-    keyboard.row();
-
-    let firstDayOfWeek = dt.weekday; // 1-7
-    for (let i = 1; i < firstDayOfWeek; i++) {
-        keyboard.text(" ", "ignore");
-    }
-
-    const daysInMonth = dt.daysInMonth;
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = dt.set({ day }).toFormat('yyyy-MM-dd');
-        keyboard.text(day.toString(), `set_date:${dateStr}`);
-        if ((day + firstDayOfWeek - 1) % 7 === 0) keyboard.row();
-    }
-
-    keyboard.row().text("🔙 Назад", "add_task_date_back");
-    return keyboard;
 };
 
 const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
@@ -92,7 +70,10 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
 
     if (geminiResult.completedTasks.length > 0) {
         geminiResult.completedTasks.forEach(taskId => {
-            if (!user.completedGlobalTasks.includes(taskId)) {
+            if (taskId === 'time_tracking') {
+                user.progress = user.progress || new Map();
+                user.progress.set(`time_tracking_${todayStr}`, true);
+            } else if (!user.completedGlobalTasks.includes(taskId)) {
                 user.completedGlobalTasks.push(taskId);
             }
         });
@@ -101,8 +82,9 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     if (geminiResult.isDailyReportAccepted) {
         let dailyTotal = 0;
         let dailyDone = 0;
-        if (weekData && weekData.daily_routine) {
-            weekData.daily_routine.forEach(t => {
+        if (weekData) {
+            const fullRoutineForDay = [...getFullDailyRoutine(user.currentWeek), ...getFullTaboo(user.currentWeek)];
+            fullRoutineForDay.forEach(t => {
                 dailyTotal++;
                 if (user.progress?.get(`${t.id}_${todayStr}`)) dailyDone++;
             });
@@ -120,29 +102,26 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     
     // Переход произойдет только если есть хотя бы 1 глобальная задача и она(и) выполнена, + рутина. Либо если глобальных нет (что вряд ли), то `every` вернет true
     const isAllGlobalDone = allGlobalTaskIds.length > 0 ? allGlobalTaskIds.every(id => user.completedGlobalTasks.includes(id)) : true;
-    const isAnyRoutineDone = user.totalRoutineDays >= 1;
 
-    if (isAllGlobalDone && isAnyRoutineDone) {
-        user.currentWeek += 1;
-        user.currentDay = 1;
-        user.completedGlobalTasks = [];
-        user.totalRoutineDays = 0;
-        await user.save();
-        await ctx.reply(`<b>ВНИМАНИЕ!</b> Ты закрыл все задачи. Неделя ${user.currentWeek} началась. Введи /tasks.`, { parse_mode: 'HTML' });
+    if (isAllGlobalDone) {
+        if (!user.isReadyForNextWeek) {
+            user.isReadyForNextWeek = true;
+            await user.save();
+            const nextTone = getTone(user.currentWeek + 1);
+            await ctx.reply(`<b>Сэнсэй:</b> Поздравляю! Все глобальные задачи этой недели приняты. Ты повышен в звании! Твой следующий статус: <b>${nextTone.label}</b>. 🏆\n\nНо не расслабляйся — добей всю рутину на сегодня. Технический переход на новую неделю будет ровно в полночь. 🦾`, { parse_mode: 'HTML' });
+        } else {
+            // Если флаг уже стоит, просто сохраняем прогресс по отчету
+            await user.save();
+        }
     } else {
         if (geminiResult.isDailyReportAccepted || geminiResult.completedTasks.length > 0) {
             let statusMsg = "засчитано.\n";
-            if (!isAllGlobalDone) {
-                const remainingTasks = weekData?.global_tasks
-                    ?.filter(t => !t.isPersistent && !user.completedGlobalTasks.includes(t.id))
-                    .map(t => t.title) || [];
-                
-                if (remainingTasks.length > 0) {
-                    statusMsg += `\nДля перехода на следующую неделю нужно выполнить:\n— ${remainingTasks.join('\n— ')}`;
-                }
-            }
-            if (!isAnyRoutineDone) {
-                statusMsg += `\n\nМинимум один день 100% рутины.`;
+            const remainingTasks = weekData?.global_tasks
+                ?.filter(t => !t.isPersistent && !user.completedGlobalTasks.includes(t.id))
+                .map(t => t.title) || [];
+            
+            if (remainingTasks.length > 0) {
+                statusMsg += `\nДля перехода на следующую неделю нужно выполнить:\n— ${remainingTasks.join('\n— ')}`;
             }
             await ctx.reply(`<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
         }
@@ -156,9 +135,16 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
             user.unfreezeDate = DateTime.now().plus({ days: 1 }).toJSDate();
             await user.save();
             await ctx.reply(`<b>ФИНИШ.</b> Ты заморожен на 24 часа за нытье.`, { parse_mode: 'HTML' });
+            if (user.contractFileId) {
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "Вспомни, под чем ты подписывался.\nНеустойка уже ждет тебя." });
+            }
         } else {
+            const tone = getTone(user.currentWeek);
             await user.save();
-            await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> У тебя ${user.strikes}/3. Еще косяк — и в бан.`, { parse_mode: 'HTML' });
+            await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> ${tone.strike} У тебя ${user.strikes}/3.`, { parse_mode: 'HTML' });
+            if (user.contractFileId) {
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "Вспомни, под чем ты подписывался.\nНеустойка уже ждет тебя." });
+            }
         }
     }
 };
@@ -167,8 +153,7 @@ const handleStart = async (ctx) => {
     const telegramId = ctx.from.id;
     const username = ctx.from.username || '';
     const isCreator = telegramId.toString() === process.env.CREATOR_ID;
-
-    const keyboard = createMainMenuKeyboard();
+    const keyboard = createMainMenuKeyboard(isCreator);
 
     let user = await User.findOne({ telegramId });
 
@@ -188,12 +173,13 @@ const handleStart = async (ctx) => {
         user = new User({ telegramId, username, isRegistered: true });
         await user.save();
 
+        const tone = getTone(user.currentWeek);
         const adminId = process.env.CREATOR_ID;
         if (adminId && telegramId.toString() !== adminId) {
             await ctx.api.sendMessage(adminId, `<b>[НОВЫЙ ПОДОПЕЧНЫЙ]</b>\n\nАккаунт: @${username || 'без username'}\nID: <code>${telegramId}</code>\n\n+1 человек в системе.`, { parse_mode: 'HTML' });
         }
 
-        await ctx.reply(`Добро пожаловать в ад, ${username || 'салага'}. Я твой ментор на ближайшие 12 недель. Никаких поблажек. Никаких соплей. Выполняешь задания вовремя — двигаешься дальше. Первая неделя началась.\n\n❗️ <b>Обязательно прочитай «📜 Правила игры» в разделе «ℹ️ Помощь и Правила».</b>`, { reply_markup: keyboard, parse_mode: 'HTML' });
+        await ctx.reply(`Привет! 👋 Это твой старт в «Тренировочный лагерь», ${tone.label}! 🚀\nЗа 12 недель мы создадим лучшую версию тебя! 💪✨\n\nЧто ты получишь на финише:\n🔥 <b>Тело мечты:</b> подтянутое, сильное и здоровое.\n⚡️ <b>Железная энергия:</b> забудь про усталость, живи на полную!\n🎯 <b>Ясность и фокус:</b> ты будешь точно знать, чего хочешь и как это взять.\n🌟 <b>Уверенность и статус:</b> новый уровень жизни, который заметят все!\n\nЭто будет твое самое крутое приключение. Готов(а) зажечь? Погнали! 🦾🔥\n\n❗️ <b>Обязательно прочитай «📜 Правила игры» в разделе «ℹ️ Помощь и Правила».</b>`, { reply_markup: keyboard, parse_mode: 'HTML' });
     } else if (user.frozen && !isCreator) {
         const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
         await ctx.reply(`Ты заморожен за невыполнение требований или нытье. Твой доступ будет восстановлен автоматически: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
@@ -213,8 +199,8 @@ const handleProgress = async (ctx) => {
     let totalTasks = 0;
     let doneTasks = 0;
 
-    if (weekData && weekData.daily_routine) {
-        weekData.daily_routine.forEach(t => {
+    if (weekData) {
+        [...getFullDailyRoutine(user.currentWeek), ...getFullTaboo(user.currentWeek)].forEach(t => {
             totalTasks++;
             const isDone = user.progress?.get(`${t.id}_${todayStr}`);
             if (isDone) doneTasks++;
@@ -262,75 +248,23 @@ const handleTasks = async (ctx) => {
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) return ctx.reply("Замороженные не получают задач.");
 
-    const weekData = methodology.weeks[user.currentWeek];
-    if (!weekData) return ctx.reply("Задания для этой недели пока не готовы. Свободен.");
-
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
 
-    const customTasks = await CustomTask.find({ telegramId: user.telegramId, date: todayStr });
+    const tasksData = await getTasksMessage(user, todayStr);
+    if (!tasksData) return ctx.reply("Задания для этой недели пока не готовы. Свободен.");
 
-    let message = `<b>${weekData.title}</b>\n\n`;
-    message += `<b>Ежедневная рутина:</b>\n`;
-    weekData.daily_routine.forEach(t => {
-        const isDone = user.progress?.get(`${t.id}_${todayStr}`);
-        message += `${isDone ? '✅' : '❌'} ${t.title}\n`;
-    });
-
-    if (customTasks.length > 0) {
-        message += `\n<b>Твои личные задачи:</b>\n`;
-        customTasks.forEach(t => {
-            message += `${t.isDone ? '✅' : '❌'} ${t.title}\n`;
-        });
-    }
-
-    message += `\n<b>Глобальные задачи недели:</b>\n`;
-    weekData.global_tasks?.forEach(t => {
-        const isDone = user.completedGlobalTasks?.includes(t.id);
-        const icon = t.isPersistent ? '🔄' : (isDone ? '✅' : '❌');
-        message += `🔥 ${t.title} ${icon}\n`;
-    });
-
-    if (user.currentWeek === 5) {
-        message += `\n⚠️ <b>БОЛЬШАЯ ЧИСТКА:</b>\nЗавершение ВСЕХ хвостов за недели 1-4.\n`;
-    }
-
-    if (weekData.taboo && weekData.taboo.length > 0) {
-        message += `\n<b>Табу:</b>\n⚔️ ${weekData.taboo.join('\n⚔️ ')}`;
-    }
-
-    const taskKeyboard = new InlineKeyboard();
-    let hasTaskButtons = false;
-
-    weekData.daily_routine.forEach(t => {
-        const isDone = user.progress?.get(`${t.id}_${todayStr}`);
-        if (!isDone) {
-            taskKeyboard.text(`Сделал ✅: ${t.title}`, `done:${t.id}`).row();
-            hasTaskButtons = true;
-        }
-    });
-
-    customTasks.forEach(t => {
-        if (!t.isDone) {
-            taskKeyboard.text(`Сделал ✅: ${t.title}`, `custom_done:${t._id}`).row();
-            hasTaskButtons = true;
-        }
-        taskKeyboard.text(`🗑 Удалить: ${t.title}`, `custom_del:${t._id}`).row();
-        hasTaskButtons = true;
-    });
-
-    taskKeyboard.text("➕ Добавить свою задачу", "add_task_step_title").row();
-    hasTaskButtons = true;
+    const { text: message, reply_markup: taskKeyboard } = tasksData;
 
     if (ctx.callbackQuery) {
         await ctx.editMessageText(message, {
             parse_mode: 'HTML',
-            reply_markup: hasTaskButtons ? taskKeyboard : undefined
+            reply_markup: taskKeyboard
         });
     } else {
         await ctx.reply(message, {
             parse_mode: 'HTML',
-            reply_markup: hasTaskButtons ? taskKeyboard : undefined
+            reply_markup: taskKeyboard
         });
     }
 };
@@ -356,10 +290,11 @@ const handleTaskDoneCallback = async (ctx) => {
 
     await ctx.answerCallbackQuery({ text: "Принято!" });
 
+    const tone = getTone(user.currentWeek);
     if (ctx.callbackQuery.message.text && ctx.callbackQuery.message.text.startsWith("Задача:")) {
         await ctx.editMessageText(`${ctx.callbackQuery.message.text.split('\n')[0]}\n\n<b>Выполнена ✅</b>`, { parse_mode: 'HTML' });
     } else {
-        await ctx.reply(`<b>Сэнсэй:</b> Хвалю за дисциплину! Продолжай.`, { parse_mode: 'HTML' });
+        await ctx.reply(`<b>Сэнсэй:</b> ${tone.praise}`, { parse_mode: 'HTML' });
         try {
             await handleTasks(ctx);
         } catch (e) {
@@ -394,8 +329,8 @@ const handleCustomTaskCallback = async (ctx) => {
     }
 };
 
-const handleAddTaskCallback = async (ctx) => {
-    const action = ctx.match[0];
+export const handleAddTaskCallback = async (ctx) => {
+    const action = ctx.match[0] || ctx.match;
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
 
@@ -409,15 +344,30 @@ const handleAddTaskCallback = async (ctx) => {
         await ctx.editMessageText("Введи название своей задачи:");
     } else if (action === "show_calendar") {
         const now = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
+        const todayStr = now.toFormat('yyyy-MM-dd');
         await ctx.editMessageText("Выбери дату на календаре:", {
-            reply_markup: createCalendarKeyboard(now.year, now.month)
+            reply_markup: createCalendarKeyboard(now.year, now.month, todayStr)
         });
     }
 
     await ctx.answerCallbackQuery();
 };
 
-const handleSetDateCallback = async (ctx) => {
+export const handleCalendarNav = async (ctx) => {
+    const [year, month] = ctx.match[1].split('_').map(Number);
+    const user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user) return;
+    
+    const now = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
+    const todayStr = now.toFormat('yyyy-MM-dd');
+    
+    await ctx.editMessageText("Выбери дату на календаре:", {
+        reply_markup: createCalendarKeyboard(year, month, todayStr)
+    });
+    await ctx.answerCallbackQuery();
+};
+
+export const handleSetDateCallback = async (ctx) => {
     const dateStr = ctx.match[1];
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user || user.addingTaskStep !== 'date') return;
@@ -434,8 +384,10 @@ const handleSetDateCallback = async (ctx) => {
     user.tempTaskTitle = '';
     await user.save();
 
+    const formattedDate = DateTime.fromISO(dateStr).setLocale('ru').toFormat('d MMMM yyyy года');
+
     await ctx.answerCallbackQuery({ text: "Задача добавлена!" });
-    await ctx.editMessageText(`Задача «<b>${newTask.title}</b>» добавлена на <b>${dateStr}</b>.`, { parse_mode: 'HTML' });
+    await ctx.editMessageText(`Задача «<b>${newTask.title}</b>» добавлена на <b>${formattedDate}</b>.`, { parse_mode: 'HTML' });
 
     // Показываем обновленный список если дата совпадает с сегодня
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
@@ -527,7 +479,7 @@ const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText) => 
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
 
-    const routineStatusText = buildRoutineStatusText(user, weekData, todayStr);
+    const routineStatusText = buildRoutineStatusText(user, weekData, todayStr, user.currentWeek);
     const currentTimeStr = dt.toFormat('HH:mm');
     const enrichedRoutineStatus = `Текущее время: ${currentTimeStr}\n${routineStatusText}`;
 
@@ -579,6 +531,10 @@ const handleText = async (ctx) => {
     if (text === "⚙️ Настройки") return handleSettings(ctx);
     if (text === "📚 Задания") return handleTasks(ctx);
     if (text === "📈 Прогресс") return handleProgress(ctx);
+    if (text === "👥 Активные юзеры" && isCreator) {
+        const activeCount = await User.countDocuments({ frozen: false });
+        return ctx.reply(`<b>[АДМИН-ПАНЕЛЬ]</b>\n\nКоличество активных подопечных: <b>${activeCount}</b>`, { parse_mode: 'HTML' });
+    }
     if (text === "ℹ️ Помощь и Правила") {
         return ctx.reply("База знаний. Здесь ты можешь прочитать теорию текущей недели, вспомнить правила бота или написать админу. А чтобы задать вопрос мне — просто напиши обычное сообщение.", {
             reply_markup: createHelpMenuKeyboard()
@@ -621,8 +577,9 @@ const handleText = async (ctx) => {
     }
 
     if (text === "🔙 Назад") {
+        const isCreatorForMenu = user.telegramId.toString() === process.env.CREATOR_ID;
         return ctx.reply("Возвращаю в главное меню. Не расслабляйся.", {
-            reply_markup: createMainMenuKeyboard()
+            reply_markup: createMainMenuKeyboard(isCreatorForMenu)
         });
     }
 
@@ -746,6 +703,10 @@ const handlePhoto = async (ctx) => {
         const photoBase64 = await downloadFileAsBase64(fileUrl);
 
         const captionText = ctx.message.caption || '';
+        if (user.currentWeek === 2 && captionText.toLowerCase().includes('контракт')) {
+            user.contractFileId = largestPhoto.file_id;
+            await user.save();
+        }
 
         const contentParts = [
             {
@@ -786,6 +747,6 @@ const handleMyChatMember = async (ctx) => {
 export {
     handleStart, handleProgress, handleSettings, handleSettingsCallback,
     handleTimezoneCallback, handleTasks, handleTaskDoneCallback,
-    handleShowLectureCallback, handleRemindLaterCallback,
+    handleCustomTaskCallback, handleShowLectureCallback, handleRemindLaterCallback,
     handleText, handleVoice, handlePhoto, handleMyChatMember
 };

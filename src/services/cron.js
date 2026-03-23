@@ -2,9 +2,11 @@ import cron from 'node-cron';
 import User from '../models/User.js';
 import Report from '../models/Report.js';
 import CustomTask from '../models/CustomTask.js';
-import methodology from '../data/methodology.js';
+import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
 import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
+import { getTasksMessage } from './task.service.js';
+import { getTone } from '../utils/tone.js';
 
 const setupCronJobs = (bot) => {
     // Единый джоб, работающий каждые 5 минут
@@ -17,49 +19,30 @@ const setupCronJobs = (bot) => {
                     const dt = DateTime.now().setZone(tz);
                     const todayStr = dt.toFormat('yyyy-MM-dd');
 
-                    // Утро 07:00
                     if (dt.hour === 7 && dt.minute === 0) {
-                        const weekData = methodology.weeks[user.currentWeek];
-                        if (!weekData) continue;
+                        const tasksData = await getTasksMessage(user, todayStr);
+                        if (!tasksData) continue;
 
-                        let msgText = `<b>УТРО, САЛАГА!</b>\n07:00 на твоих часах.\n\n<b>Неделя ${user.currentWeek}: ${weekData.title}</b>\n`;
+                        const tone = getTone(user.currentWeek);
+                        let morningHeader = `<b>${tone.greeting}</b>\n`;
+                        
+                        if (user.currentDay === 1) {
+                            morningHeader += `Поздравляю с переходом на новую неделю! Твое новое звание: <b>${tone.label}</b>. 🏆\n\n`;
+                        }
+                        morningHeader += `07:00 на твоих часах.\n\n`;
                         
                         if (user.currentWeek === 2) {
-                            msgText += `\nВстал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n`;
+                            morningHeader += `Встал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n\n`;
                         } else if (user.currentWeek === 4) {
-                            msgText += `\n8 километров сами себя не пройдут. Вставай и насыщай мозг кислородом. Отдавай, чтобы получать.\n`;
+                            morningHeader += `8 километров сами себя не пройдут. Вставай и насыщай мозг кислородом. Отдавай, чтобы получать.\n\n`;
                         } else {
-                            msgText += `\nНиже твоя рутина на сегодня. Жми кнопки по мере выполнения.\n`;
+                            morningHeader += `Ниже твоя рутина на сегодня. Жми кнопки по мере выполнения.\n\n`;
                         }
 
-                        if (weekData.global_tasks?.length > 0) {
-                            msgText += `\n<b>Глобальные задачи недели:</b>\n`;
-                            weekData.global_tasks.forEach(t => {
-                                const isDone = user.completedGlobalTasks?.includes(t.id);
-                                const icon = t.isPersistent ? '🔄' : (isDone ? '✅' : '❌');
-                                msgText += `🔥 ${t.title} ${icon}\n`;
-                            });
-                        }
-
-                        if (weekData.taboo?.length > 0) {
-                            msgText += `\n<b>⚠️ ТАБУ:</b>\n⚔️ ${weekData.taboo.join('\n⚔️ ')}\n`;
-                        }
-
-                        await bot.api.sendMessage(user.telegramId, msgText, { parse_mode: 'HTML' });
-
-                        for (const task of weekData.daily_routine) {
-                            const isDone = user.progress?.get(`${task.id}_${todayStr}`);
-                            if (!isDone) {
-                                const keyboard = new InlineKeyboard()
-                                    .text(`Сделал ✅: ${task.title}`, `done:${task.id}`)
-                                    .row()
-                                    .text(`Напомни позже ⏳`, `remind_later`);
-                                await bot.api.sendMessage(user.telegramId, `Задача: <b>${task.title}</b>`, {
-                                    parse_mode: 'HTML',
-                                    reply_markup: keyboard
-                                });
-                            }
-                        }
+                        await bot.api.sendMessage(user.telegramId, morningHeader + tasksData.text, { 
+                            parse_mode: 'HTML',
+                            reply_markup: tasksData.reply_markup
+                        });
                     }
 
                     // Утро 07:10 (Мантра Неделя 5)
@@ -158,8 +141,12 @@ const setupCronJobs = (bot) => {
                         const weekData = methodology.weeks[user.currentWeek];
                         if (!weekData) continue;
 
+                        const weekJustStartedToday = user.weekStartedDate === todayStr;
+                        if (weekJustStartedToday) continue;
+
                         let hasUndone = false;
-                        for (const task of weekData.daily_routine) {
+                        const allDailyTasks = [...getFullDailyRoutine(user.currentWeek), ...methodology.weeks[user.currentWeek] ? getFullTaboo(user.currentWeek) : []];
+                        for (const task of allDailyTasks) {
                             const isDone = user.progress?.get(`${task.id}_${todayStr}`);
                             if (!isDone) hasUndone = true;
                         }
@@ -170,7 +157,8 @@ const setupCronJobs = (bot) => {
                             let warningParts = [];
                             if (hasUndone) warningParts.push("невыполненные задачи рутины");
                             if (!hasReportToday) warningParts.push("не сдан дневной отчёт");
-                            await bot.api.sendMessage(user.telegramId, `<b>ВНИМАНИЕ!</b> 23:30. У тебя: ${warningParts.join(' и ')}. Если до полуночи не закроешь — получишь страйк. Шевелись!`, { parse_mode: 'HTML' });
+                            const tone = getTone(user.currentWeek);
+                            await bot.api.sendMessage(user.telegramId, `<b>ВНИМАНИЕ!</b> 23:30. У тебя: ${warningParts.join(' и ')}. ${tone.warning}`, { parse_mode: 'HTML' });
                         }
                     }
 
@@ -187,27 +175,49 @@ const setupCronJobs = (bot) => {
                         }
 
                         let hasUndoneRoutine = false;
-                        for (const task of weekData.daily_routine) {
+                        const allDailyTasks = [...getFullDailyRoutine(user.currentWeek), ...methodology.weeks[user.currentWeek] ? getFullTaboo(user.currentWeek) : []];
+                        for (const task of allDailyTasks) {
                             const isDone = user.progress?.get(`${task.id}_${yesterdayStr}`);
                             if (!isDone) hasUndoneRoutine = true;
                         }
 
                         const hadReportYesterday = user.lastReportDate === yesterdayStr;
 
-                        if (hasUndoneRoutine || !hadReportYesterday) {
-                            user.strikes = (user.strikes || 0) + 1;
-                            let reasonParts = [];
-                            if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
-                            if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
-                            if (user.strikes >= 3) {
-                                user.frozen = true;
-                                await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 3 страйка (нытье или провалы). Ты заморожен и лишен голоса в этом чате. Переходи в оффлайн-режим и подумай над своим поведением.", { parse_mode: 'HTML' });
-                            } else {
-                                await bot.api.sendMessage(user.telegramId, `<b>СТРАЙК!</b> Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes} страйка(ов) из 3 максимальных. Дальше — бан.`, { parse_mode: 'HTML' });
-                            }
+                        // Если день закрыт на 100%, увеличиваем счетчик
+                        if (!hasUndoneRoutine && hadReportYesterday) {
+                            user.totalRoutineDays = (user.totalRoutineDays || 0) + 1;
                         }
-                        
-                        await user.save();
+
+                        // Проверка перехода на новую неделю
+                        if (user.isReadyForNextWeek && user.totalRoutineDays >= 1) {
+                            user.currentWeek += 1;
+                            user.currentDay = 1;
+                            user.completedGlobalTasks = [];
+                            user.totalRoutineDays = 0;
+                            user.isReadyForNextWeek = false;
+                            user.weekStartedDate = dt.toFormat('yyyy-MM-dd');
+                            await user.save();
+                            const tone = getTone(user.currentWeek);
+                            await bot.api.sendMessage(user.telegramId, `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги обнулены, впереди новые испытания. Жми /tasks и в бой.`, { parse_mode: 'HTML' });
+                        } else {
+                            // Если перехода нет, проверяем на страйки за вчера
+                            if (hasUndoneRoutine || !hadReportYesterday) {
+                                user.strikes = (user.strikes || 0) + 1;
+                                let reasonParts = [];
+                                if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
+                                if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
+                                
+                                if (user.strikes >= 3) {
+                                    user.frozen = true;
+                                    await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 3 страйка. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
+                                } else {
+                                    const tone = getTone(user.currentWeek);
+                                    await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/3 страйков.`, { parse_mode: 'HTML' });
+                                }
+                            }
+                            await user.save();
+                        }
+                        continue; // Переходим к следующему юзеру
                     }
                 } catch (e) {
                     console.error(`Failed cron for user ${user.telegramId}`, e.message);

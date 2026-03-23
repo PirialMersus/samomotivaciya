@@ -1,9 +1,15 @@
-const createMainMenuKeyboard = () => {
+const createMainMenuKeyboard = (isAdmin = false) => {
+    const keyboard = [
+        [{ text: "📚 Задания" }, { text: "📈 Прогресс" }],
+        [{ text: "ℹ️ Помощь и Правила" }, { text: "⚙️ Настройки" }]
+    ];
+
+    if (isAdmin) {
+        keyboard.push([{ text: "👥 Активные юзеры" }]);
+    }
+
     return {
-        keyboard: [
-            [{ text: "📚 Задания" }, { text: "📈 Прогресс" }],
-            [{ text: "ℹ️ Помощь и Правила" }, { text: "⚙️ Настройки" }]
-        ],
+        keyboard,
         resize_keyboard: true
     };
 };

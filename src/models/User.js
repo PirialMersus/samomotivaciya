@@ -102,6 +102,18 @@ const userSchema = new mongoose.Schema({
     tempTaskTitle: {
         type: String,
         default: ''
+    },
+    weekStartedDate: {
+        type: String,
+        default: ''
+    },
+    isReadyForNextWeek: {
+        type: Boolean,
+        default: false
+    },
+    contractFileId: {
+        type: String,
+        default: null
     }
 }, {
     timestamps: true,
