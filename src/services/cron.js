@@ -207,12 +207,12 @@ const setupCronJobs = (bot) => {
                                 if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
                                 if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
                                 
-                                if (user.strikes >= 3) {
+                                if (user.strikes >= 5) {
                                     user.frozen = true;
-                                    await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 3 страйка. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
+                                    await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 5 страйков. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
                                 } else {
                                     const tone = getTone(user.currentWeek);
-                                    await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/3 страйков.`, { parse_mode: 'HTML' });
+                                    await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/5 страйков.`, { parse_mode: 'HTML' });
                                 }
                             }
                             await user.save();

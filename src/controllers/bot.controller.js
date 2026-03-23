@@ -130,9 +130,9 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
 
     if (geminiResult.hasWhiningPenalty) {
         user.strikes = (user.strikes || 0) + 1;
-        if (user.strikes >= 3) {
+        if (user.strikes >= 5) {
             user.frozen = true;
-            user.unfreezeDate = DateTime.now().plus({ days: 1 }).toJSDate();
+            user.unfreezeDate = DateTime.now().setZone(user.timezone || 'Europe/Kyiv').plus({ days: 1 }).toJSDate();
             await user.save();
             await ctx.reply(`<b>ФИНИШ.</b> Ты заморожен на 24 часа за нытье.`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
@@ -141,7 +141,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
         } else {
             const tone = getTone(user.currentWeek);
             await user.save();
-            await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> ${tone.strike} У тебя ${user.strikes}/3.`, { parse_mode: 'HTML' });
+            await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> ${tone.strike} У тебя ${user.strikes}/5.`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
                 await ctx.replyWithPhoto(user.contractFileId, { caption: "Вспомни, под чем ты подписывался.\nНеустойка уже ждет тебя." });
             }
@@ -220,7 +220,7 @@ const handleProgress = async (ctx) => {
     text += `Задач на сегодня выполнено: ${doneTasks} из ${totalTasks}\n`;
     text += `Глобальных задач за неделю: ${doneGlobalTasks} из ${totalGlobalTasks}\n`;
     text += `Отчёт за сегодня: ${hasReportToday ? '✅ Сдан' : '❌ Не сдан'}\n`;
-    text += `Страйков за косяки и нытье: ${strikes}/3\n`;
+    text += `Страйков за косяки и нытье: ${strikes}/5\n`;
 
     if (user.currentWeek === 8) {
         const staticDone = user.progress?.get(`static_willpower_${todayStr}`) ? "Выполнена ✅" : "Нет ❌";
@@ -566,7 +566,7 @@ const handleText = async (ctx) => {
     if (text === "📚 Пояснение заданий") return handleShowLectureCallback(ctx);
 
     if (text === "📜 Правила игры") {
-        const rulesText = `<b>📜 ПРАВИЛА ИГРЫ:</b>\n\n1. <b>Задания:</b> Жми «📚 Задания» внизу. Там твой план на неделю: ежедневная рутина и глобальные цели. Рутину отмечай прямо там кнопками со статусами.\n2. <b>Отчеты:</b> Каждый вечер присылай мне <b>отчет</b> (текстом или голосовым). Расскажи, что сделал за день по рутине и какие глобальные задачи закрыл. Я оценю твой прогресс.\n3. <b>Переход на новую неделю:</b> Чтобы перейти, нужно закрыть <b>все</b> глобальные задачи и <b>хотя бы 1 день</b> выполнить рутину на 100%.\n4. <b>Наказания:</b> За игнор отчетов, невыполнение или нытье — даю страйки. 3 страйка — заморозка бота на 24 часа.\n\n<i>Остались вопросы? Просто напиши мне сообщение текстом/голосом, либо напиши админу (@pirial_mersus), он всё разъяснит.</i>`;
+        const rulesText = `<b>📜 ПРАВИЛА ИГРЫ:</b>\n\n1. <b>Задания:</b> Жми «📚 Задания» внизу. Там твой план на неделю: ежедневная рутина и глобальные цели. Рутину отмечай прямо там кнопками со статусами.\n2. <b>Отчеты:</b> Каждый вечер присылай мне <b>отчет</b> (текстом или голосовым). Расскажи, что сделал за день по рутине и какие глобальные задачи закрыл. Я оценю твой прогресс.\n3. <b>Переход на новую неделю:</b> Чтобы перейти, нужно закрыть <b>все</b> глобальные задачи и <b>хотя бы 1 день</b> выполнить рутину на 100%.\n4. <b>Наказания:</b> За игнор отчетов, невыполнение или нытье — даю страйки. 5 страйков — заморозка бота на 24 часа.\n\n<i>Остались вопросы? Просто напиши мне сообщение текстом/голосом, либо напиши админу (@pirial_mersus), он всё разъяснит.</i>`;
         return ctx.reply(rulesText, { parse_mode: 'HTML' });
     }
 
