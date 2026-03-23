@@ -9,12 +9,12 @@ export const getTasksMessage = async (user, todayStr) => {
     const customTasks = await CustomTask.find({ telegramId: user.telegramId, date: todayStr });
 
     let message = `<b>${weekData.title}</b>\n\n`;
-    const pendingRoutine = getFullDailyRoutine(user.currentWeek).filter(t => !user.progress?.get(`${t.id}_${todayStr}`));
-    
-    if (pendingRoutine.length > 0) {
+    const allRoutine = getFullDailyRoutine(user.currentWeek);
+    if (allRoutine.length > 0) {
         message += `<b>Ежедневная рутина:</b>\n`;
-        pendingRoutine.forEach(t => {
-            message += `❌ ${t.title}\n`;
+        allRoutine.forEach(t => {
+            const isDone = user.progress?.get(`${t.id}_${todayStr}`);
+            message += `${isDone ? '✅' : '❌'} ${t.title}\n`;
         });
     }
 
@@ -29,19 +29,19 @@ export const getTasksMessage = async (user, todayStr) => {
         message += `\n⚠️ <b>БОЛЬШАЯ ЧИСТКА:</b>\nЗавершение ВСЕХ хвостов за недели 1-4.\n`;
     }
 
-    const fullTaboo = getFullTaboo(user.currentWeek).filter(t => !user.progress?.get(`${t.id}_${todayStr}`));
-    if (fullTaboo.length > 0) {
+    const allTaboo = getFullTaboo(user.currentWeek);
+    if (allTaboo.length > 0) {
         message += `\n<b>Табу (соблюдал весь день):</b>\n`;
-        fullTaboo.forEach(t => {
-            message += `❌ <b>${t.title}</b>: ${t.detail}\n`;
+        allTaboo.forEach(t => {
+            const isDone = user.progress?.get(`${t.id}_${todayStr}`);
+            message += `${isDone ? '✅' : '❌'} <b>${t.title}</b>: ${t.detail}\n`;
         });
     }
 
-    const pendingCustom = customTasks.filter(t => !t.isDone);
-    if (pendingCustom.length > 0) {
+    if (customTasks.length > 0) {
         message += `\n\n\n<b>Мои задачи:</b>\n`;
-        pendingCustom.forEach(t => {
-            message += `❌ ${t.title}\n`;
+        customTasks.forEach(t => {
+            message += `${t.isDone ? '✅' : '❌'} ${t.title}\n`;
         });
     }
 
@@ -59,7 +59,7 @@ export const getTasksMessage = async (user, todayStr) => {
 
     taskKeyboard.text("➕ Добавить свою задачу", "add_task_step_title").row();
 
-    pendingCustom.forEach(t => {
+    customTasks.filter(t => !t.isDone).forEach(t => {
         taskKeyboard.text(`✅ ${t.title}`, `custom_done:${t._id}`).row();
         hasButtons = true;
     });
