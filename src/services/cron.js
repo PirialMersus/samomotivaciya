@@ -60,11 +60,19 @@ const setupCronJobs = (bot) => {
                         await bot.api.sendMessage(user.telegramId, "<b>ПЛАН НА ГОД:</b> План перед глазами? Что ты сделаешь сегодня, чтобы закрыть результат этой недели? Время идет.", { parse_mode: 'HTML' });
                     }
 
-                    // Рандомные проверки днем (Неделя 2 и 3)
-                    if (dt.hour >= 10 && dt.hour <= 20) {
+                    // Рандомные проверки днем + уведомление 7-го дня
+                    if (dt.hour === 10 && dt.minute === 0 && user.currentDay === 7) {
+                        await bot.api.sendMessage(user.telegramId, "⚡️ <b>ВНИМАНИЕ: ПОСЛЕДНИЙ ДЕНЬ НЕДЕЛИ!</b>\n\nСегодня седьмой день твоей текущей недели. Убедись, что ВСЕ глобальные задачи закрыты. Если к полуночи они не будут приняты — ты получишь страйк.", { parse_mode: 'HTML' });
+                    }
+
+                    if (dt.hour >= 9 && dt.hour <= 18) {
                         // Шанс примерно раз в день (с вероятностью 0.0075 каждые 5 минут)
                         if (Math.random() < 0.0075) {
-                            if (user.currentWeek === 2) {
+                            if (user.focusArea) {
+                                const tone = getTone(user.currentWeek);
+                                const reminder = await generateFocusReminder(user.focusArea, user.currentWeek, tone);
+                                await bot.api.sendMessage(user.telegramId, `🔔 <b>Напоминание фокуса:</b>\n\n${reminder}`, { parse_mode: 'HTML' });
+                            } else if (user.currentWeek === 2) {
                                 await bot.api.sendMessage(user.telegramId, "<b>Сэнсэй видит всё.</b> Ты сейчас в лифте или на лестнице? Оправданий не принимаю.", { parse_mode: 'HTML' });
                             } else if (user.currentWeek === 3) {
                                 await bot.api.sendMessage(user.telegramId, "<b>ПРОВЕРКА ВНИМАНИЯ.</b> Куда сейчас направлено твое внимание? В себя? На других? На цели? Или ты витаешь в облаках? Вернись в центр.", { parse_mode: 'HTML' });
@@ -196,16 +204,23 @@ const setupCronJobs = (bot) => {
                             user.totalRoutineDays = 0;
                             user.isReadyForNextWeek = false;
                             user.weekStartedDate = dt.toFormat('yyyy-MM-dd');
+                            user.strikes = 0; // СБРОС СТРАЙКОВ ПРИ ПЕРЕХОДЕ
                             await user.save();
                             const tone = getTone(user.currentWeek);
-                            await bot.api.sendMessage(user.telegramId, `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги обнулены, впереди новые испытания. Жми /tasks и в бой.`, { parse_mode: 'HTML' });
+                            await bot.api.sendMessage(user.telegramId, `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания. Жми /tasks и в бой.`, { parse_mode: 'HTML' });
                         } else {
                             // Если перехода нет, проверяем на страйки за вчера
-                            if (hasUndoneRoutine || !hadReportYesterday) {
+                            let reasonParts = [];
+                            if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
+                            if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
+                            
+                            // НОВОЕ: Страйк за глобальные задачи после 7-го дня
+                            if (user.currentDay > 7 && !user.isReadyForNextWeek) {
+                                reasonParts.push("невыполненные глобальные задачи недели");
+                            }
+
+                            if (reasonParts.length > 0) {
                                 user.strikes = (user.strikes || 0) + 1;
-                                let reasonParts = [];
-                                if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
-                                if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
                                 
                                 if (user.strikes >= 5) {
                                     user.frozen = true;

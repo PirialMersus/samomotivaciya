@@ -114,6 +114,18 @@ const userSchema = new mongoose.Schema({
     contractFileId: {
         type: String,
         default: null
+    },
+    focusArea: {
+        type: String,
+        default: ''
+    },
+    isSettingFocusArea: {
+        type: Boolean,
+        default: false
+    },
+    isSettingWeek: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true,

@@ -11,9 +11,7 @@ const formatResponse = (text) => {
 export const processUserMessage = async (contentParts, userWeek, routineStatusText) => {
   try {
     const weekData = methodology.weeks[userWeek] || { title: "Общий протокол", global_tasks: [] };
-
     const globalTasksList = weekData.global_tasks?.map(t => `- [${t.id}] ${t.title}`).join('\n') || 'Нет специфических глобальных задач.';
-
     const tone = getTone(userWeek);
     const systemInstruction = `Ты — мудрый, строгий, но справедливый ИИ-ментор "Сэнсэй" на курсе "Перевоплощение".
 Роль: ${methodology.core_philosophy.role}.
@@ -34,7 +32,7 @@ export const processUserMessage = async (contentParts, userWeek, routineStatusTe
 - ВАЖНО ПРО СКРИНШОТ УЧЕТА ВРЕМЕНИ (Yaware, RescueTime и т.д.): Если ученик прислал скриншот программы отслеживания времени, добавь "time_tracking" в массив \`completed_tasks\`. Это единственный способ засчитать рутину учета времени.
 - ВАЖНО: Если ученик пытался сдать глобальные задачи или скриншоты, ОБЯЗАТЕЛЬНО в НАЧАЛЕ ответа укажи статус ПО КАЖДОЙ задаче отдельно, например:
 «Шоу Трумана» — ПРИНЯТО ✅
-«Солдат Джейн» — НЕ ПРИНЯТО ❌ (слишком поверхностно, раскрой тему глубже)
+«Солдат Джейн» — НЕ ПРИНЯТО ❌ (слишком поверхностно, раскрой тему глубоже)
 «Учет времени (скриншот)» — ПРИНЯТО ✅
 Если задача одна — достаточно одной строки. Затем дай развернутую обратную связь.
 
@@ -82,8 +80,8 @@ ${globalTasksList}
 
     const result = await model.generateContent(contentParts);
     let parsedText = result.response.text();
-    if (parsedText.startsWith('\`\`\`json')) {
-      parsedText = parsedText.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
+    if (parsedText.startsWith('```json')) {
+      parsedText = parsedText.replace(/```json/g, '').replace(/```/g, '').trim();
     }
 
     let parsed;
@@ -119,5 +117,25 @@ ${globalTasksList}
       completedTasks: [],
       hasWhiningPenalty: false
     };
+  }
+};
+
+export const generateFocusReminder = async (focusArea, userWeek, tone) => {
+  try {
+    const systemInstruction = `Ты — мудрый Сэнсэй. Подопечный поставил себе цель или выбрал сферу интересов: "${focusArea}". Он на ${userWeek} неделе (статус: ${tone.label}). 
+    Сгенерируй одну короткую, глубокую и вдохновляющую фразу или вопрос, которые помогут ему держать фокус на этой задаче. 
+    Тон: ${tone.attitude}.
+    Максимум 2 предложения. Используй только разрешенные теги: <b>, <i>.`;
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: systemInstruction,
+    });
+
+    const result = await model.generateContent("Сгенерируй напоминание.");
+    return formatResponse(result.response.text());
+  } catch (error) {
+    console.error("Gemini Focus Hint Error:", error);
+    return "Соберись. Твоя цель ждет действий, а не оправданий.";
   }
 };

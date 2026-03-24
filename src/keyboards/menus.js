@@ -6,6 +6,7 @@ const createMainMenuKeyboard = (isAdmin = false) => {
 
     if (isAdmin) {
         keyboard.push([{ text: "👥 Активные юзеры" }]);
+        keyboard.push([{ text: "📅 Выставить неделю" }, { text: "🧪 Тест напоминания" }]);
     }
 
     return {

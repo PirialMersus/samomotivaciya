@@ -6,6 +6,8 @@ export const createSettingsKeyboard = () => {
     return new InlineKeyboard()
         .text('🌐 Часовой пояс', 'settings:timezone')
         .row()
+        .text('🎯 Мой фокус (личные советы)', 'settings:focus')
+        .row()
         .text('❌ Закрыть', 'settings:close');
 };
 

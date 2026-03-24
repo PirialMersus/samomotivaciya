@@ -129,6 +129,9 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     }
 
     if (geminiResult.hasWhiningPenalty) {
+        const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
+        if (isCreator) return; // Админ не получает страйки
+        
         user.strikes = (user.strikes || 0) + 1;
         if (user.strikes >= 5) {
             user.frozen = true;
@@ -179,7 +182,11 @@ const handleStart = async (ctx) => {
             await ctx.api.sendMessage(adminId, `<b>[НОВЫЙ ПОДОПЕЧНЫЙ]</b>\n\nАккаунт: @${username || 'без username'}\nID: <code>${telegramId}</code>\n\n+1 человек в системе.`, { parse_mode: 'HTML' });
         }
 
-        await ctx.reply(`Привет! 👋 Это твой старт в «Тренировочный лагерь», ${tone.label}! 🚀\nЗа 12 недель мы создадим лучшую версию тебя! 💪✨\n\nЧто ты получишь на финише:\n🔥 <b>Тело мечты:</b> подтянутое, сильное и здоровое.\n⚡️ <b>Железная энергия:</b> забудь про усталость, живи на полную!\n🎯 <b>Ясность и фокус:</b> ты будешь точно знать, чего хочешь и как это взять.\n🌟 <b>Уверенность и статус:</b> новый уровень жизни, который заметят все!\n\nЭто будет твое самое крутое приключение. Готов(а) зажечь? Погнали! 🦾🔥\n\n❗️ <b>Обязательно прочитай «📜 Правила игры» в разделе «ℹ️ Помощь и Правила».</b>`, { reply_markup: keyboard, parse_mode: 'HTML' });
+        await ctx.reply(`Добро пожаловать в «Систему» — алгоритм твоей трансформации. 🧠💻\n\nЭтот тренинг базируется на принципах нейропластичности и теории систем. Мы не просто меняем привычки, мы меняем структуру твоего взаимодействия с миром.\n\nЭффективность курса (12 недель):\n\n<b>Репрограммирование:</b> Взлом «автопилота» мозга через смену маршрутов и новые привычки.\n<b>Биохакинг:</b> Оптимизация физического состояния для максимального когнитивного ресурса.\n<b>Социальный резонанс:</b> Использование теории сетей для повышения твоего статуса.\n\nЭто логичный, сухой и гарантированный путь к результату, если соблюдать протокол. 📊\n\nИзучи методологию и приступай к первому этапу: Идентификация.\n\n❗️ <b>Обязательно прочитай «📜 Правила игры» в разделе «ℹ️ Помощь и Правила».</b>`, { reply_markup: keyboard, parse_mode: 'HTML' });
+
+        user.isSettingFocusArea = true;
+        await user.save();
+        await ctx.reply("Прежде чем мы начнем, скажи: <b>над чем ты хочешь поработать больше всего?</b>\n\nЭто может быть глобальная сфера (Деньги, Отношения, Здоровье) или конкретная задача на ближайшее время (Научиться водить, Выучить язык).\n\nЯ буду присылать тебе персональные напоминания от Сэнсэя, чтобы ты всегда держал это в фокусе.", { parse_mode: 'HTML' });
     } else if (user.frozen && !isCreator) {
         const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
         await ctx.reply(`Ты заморожен за невыполнение требований или нытье. Твой доступ будет восстановлен автоматически: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
@@ -437,6 +444,11 @@ const handleSettingsCallback = async (ctx) => {
         });
     } else if (action === 'close') {
         await ctx.deleteMessage();
+    } else if (action === 'focus') {
+        const user = await User.findOne({ telegramId: ctx.from.id });
+        user.isSettingFocusArea = true;
+        await user.save();
+        await ctx.editMessageText(`⚡️ <b>Твой фокус внимания — это твоя суперсила.</b>\n\nСэнсэй будет раз в день присылать тебе персональный совет или вопрос, основанный на твоей текущей цели, чтобы ты не „засыпал“ в рутине.\n\n<b>Над чем ты работаешь сейчас?</b>\nЭто может быть:\n— Сфера (Деньги, Отношения, Тело, Осознанность)\n— Конкретное дело (Выучить 100 слов, Сдать проект, Научиться водить)\n\nНапиши ответ одним сообщением, и Сэнсэй включит это в твой протокол.`, { parse_mode: 'HTML' });
     }
     await ctx.answerCallbackQuery();
 };
@@ -522,6 +534,49 @@ const handleText = async (ctx) => {
 
     const text = ctx.message.text;
 
+    // Обработка установки сферы интересов (Onboarding)
+    if (user.isSettingFocusArea) {
+        user.focusArea = text.trim();
+        user.isSettingFocusArea = false;
+        await user.save();
+        await ctx.reply(`Понял тебя. Твой фокус зафиксирован: <b>${user.focusArea}</b>.\nЯ буду использовать это, чтобы возвращать твое внимание к самому важному.`, { parse_mode: 'HTML' });
+        await ctx.reply("Теперь ты в системе. Используй меню для навигации.", { reply_markup: createMainMenuKeyboard(isCreator) });
+        return;
+    }
+
+    // Обработка установки недели админом
+    if (user.isSettingWeek && isCreator) {
+        const weekNum = parseInt(text);
+        if (!isNaN(weekNum) && weekNum >= 1 && weekNum <= 12) {
+            user.currentWeek = weekNum;
+            user.isSettingWeek = false;
+            await user.save();
+            await ctx.reply(`Текущая неделя успешно изменена на <b>${weekNum}</b>.`, { parse_mode: 'HTML', reply_markup: createMainMenuKeyboard(true) });
+        } else {
+            await ctx.reply("❌ Некорректный номер недели. Введи число от 1 до 12.");
+        }
+        return;
+    }
+
+    if (text === "📅 Выставить неделю" && isCreator) {
+        user.isSettingWeek = true;
+        await user.save();
+        await ctx.reply("Введи номер недели (1-12):", { reply_markup: { remove_keyboard: true } });
+        return;
+    }
+
+    if (text === "🧪 Тест напоминания" && isCreator) {
+        if (!user.focusArea) {
+            await ctx.reply("⚠️ У тебя не установлена сфера интересов. Сначала установи её.");
+            return;
+        }
+        await ctx.reply("⌛️ Генерирую тестовое напоминание...");
+        const tone = getTone(user.currentWeek);
+        const reminder = await geminiService.generateFocusReminder(user.focusArea, user.currentWeek, tone);
+        await ctx.reply(`🔔 <b>Тестовое напоминание (Фокус: ${user.focusArea}):</b>\n\n${reminder}`, { parse_mode: 'HTML' });
+        return;
+    }
+
     const isMenuButton = ["⚙️ Настройки", "📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "📚 Пояснение заданий", "📜 Правила игры", "🔙 Назад"].includes(text);
     if (isMenuButton && user.isMessagingAdmin) {
         user.isMessagingAdmin = false;
@@ -532,8 +587,24 @@ const handleText = async (ctx) => {
     if (text === "📚 Задания") return handleTasks(ctx);
     if (text === "📈 Прогресс") return handleProgress(ctx);
     if (text === "👥 Активные юзеры" && isCreator) {
-        const activeCount = await User.countDocuments({ frozen: false });
-        return ctx.reply(`<b>[АДМИН-ПАНЕЛЬ]</b>\n\nКоличество активных подопечных: <b>${activeCount}</b>`, { parse_mode: 'HTML' });
+        const stats = await User.aggregate([
+            { $match: { frozen: false } },
+            { $group: { _id: "$currentWeek", count: { $sum: 1 } } },
+            { $sort: { _id: 1 } }
+        ]);
+        
+        const totalActive = stats.reduce((acc, s) => acc + s.count, 0);
+        let statsMsg = `<b>[АДМИН-ПАНЕЛЬ]</b>\n\nВсего активных: <b>${totalActive}</b>\n\n`;
+        
+        if (stats.length > 0) {
+            stats.forEach(s => {
+                statsMsg += `Неделя ${s._id}: <b>${s.count}</b>\n`;
+            });
+        } else {
+            statsMsg += "В системе пока нет активных подопечных.";
+        }
+        
+        return ctx.reply(statsMsg, { parse_mode: 'HTML' });
     }
     if (text === "ℹ️ Помощь и Правила") {
         return ctx.reply("База знаний. Здесь ты можешь прочитать теорию текущей недели, вспомнить правила бота или написать админу. А чтобы задать вопрос мне — просто напиши обычное сообщение.", {
