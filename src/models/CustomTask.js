@@ -29,5 +29,8 @@ const customTaskSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// TTL индекс: удаление кастомных задач через 120 дней (~4 месяца)
+customTaskSchema.index({ createdAt: 1 }, { expireAfterSeconds: 10368000 });
+
 const CustomTask = mongoose.model('CustomTask', customTaskSchema);
 export default CustomTask;

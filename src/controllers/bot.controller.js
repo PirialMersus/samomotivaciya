@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Report from '../models/Report.js';
 import CustomTask from '../models/CustomTask.js';
+import Artifact from '../models/Artifact.js';
 import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
 import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
@@ -49,7 +50,11 @@ const buildRoutineStatusText = (user, weekData, todayStr, weekNumber) => {
     return statusText;
 };
 
-const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
+const processGeminiResult = async (ctx, user, geminiResult, originalText, options = {}) => {
+    if (geminiResult.isContractPhoto && options.photoId) {
+        user.contractFileId = options.photoId;
+        await user.save();
+    }
     const weekData = methodology.weeks[user.currentWeek];
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
@@ -79,6 +84,48 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
         });
     }
 
+    if (geminiResult.extractedArtifacts) {
+        const art = geminiResult.extractedArtifacts;
+        const types = [
+            { key: 'desires', type: 'desires100' },
+            { key: 'smart_goals', type: 'smartGoals10' },
+            { key: 'strategic_goals', type: 'strategicGoals' },
+            { key: 'tactical_goals', type: 'tacticalGoals' },
+            { key: 'contract_text', type: 'contractText' },
+            { key: 'analysis_of_situation', type: 'analysisOfCurrentSituation' },
+            { key: 'weekly_report', type: 'weeklyReport' }
+        ];
+
+        for (const t of types) {
+            const val = art[t.key];
+            if (!val || (Array.isArray(val) && val.length === 0)) continue;
+
+            let finalVal = val;
+            if (t.type === 'desires100') {
+                const existing = await Artifact.findOne({ userId: user._id, type: 'desires100' });
+                const currentList = existing ? existing.value : [];
+                finalVal = [...new Set([...currentList, ...val])];
+            }
+
+            if (t.type === 'weeklyReport') {
+                const newReportArt = new Artifact({
+                    userId: user._id,
+                    type: 'weeklyReport',
+                    value: finalVal,
+                    week: user.currentWeek
+                });
+                await newReportArt.save();
+                continue;
+            }
+
+            await Artifact.findOneAndUpdate(
+                { userId: user._id, type: t.type },
+                { value: finalVal, updatedAt: new Date() },
+                { upsert: true, setDefaultsOnInsert: true }
+            );
+        }
+    }
+
     if (geminiResult.isDailyReportAccepted) {
         let dailyTotal = 0;
         let dailyDone = 0;
@@ -99,7 +146,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     const allGlobalTaskIds = weekData?.global_tasks
         ?.filter(t => !t.isPersistent)
         .map(t => t.id) || [];
-    
+
     // Переход произойдет только если есть хотя бы 1 глобальная задача и она(и) выполнена, + рутина. Либо если глобальных нет (что вряд ли), то `every` вернет true
     const isAllGlobalDone = allGlobalTaskIds.length > 0 ? allGlobalTaskIds.every(id => user.completedGlobalTasks.includes(id)) : true;
 
@@ -119,7 +166,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
             const remainingTasks = weekData?.global_tasks
                 ?.filter(t => !t.isPersistent && !user.completedGlobalTasks.includes(t.id))
                 .map(t => t.title) || [];
-            
+
             if (remainingTasks.length > 0) {
                 statusMsg += `\nДля перехода на следующую неделю нужно выполнить:\n— ${remainingTasks.join('\n— ')}`;
             }
@@ -131,26 +178,62 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText) => {
     if (geminiResult.hasWhiningPenalty) {
         const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
         if (isCreator) return; // Админ не получает страйки
-        
+
         user.strikes = (user.strikes || 0) + 1;
         if (user.strikes >= 5) {
             user.frozen = true;
             user.unfreezeDate = DateTime.now().setZone(user.timezone || 'Europe/Kyiv').plus({ days: 1 }).toJSDate();
             await user.save();
-            await ctx.reply(`<b>ФИНИШ.</b> Ты заморожен на 24 часа за нытье.`, { parse_mode: 'HTML' });
+            await ctx.reply(`<b>ФИНИШ. Ты заморожен на 24 часа за нытье.</b>`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
-                await ctx.replyWithPhoto(user.contractFileId, { caption: "Вспомни, под чем ты подписывался.\nНеустойка уже ждет тебя." });
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вот твое обязательство.</b> Ты должен дойти до конца. 🦾", parse_mode: 'HTML' });
             }
         } else {
             const tone = getTone(user.currentWeek);
             await user.save();
             await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> ${tone.strike} У тебя ${user.strikes}/5.`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
-                await ctx.replyWithPhoto(user.contractFileId, { caption: "Вспомни, под чем ты подписывался.\nНеустойка уже ждет тебя." });
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вот твое обязательство.</b> Ты должен дойти до конца. 🦾", parse_mode: 'HTML' });
             }
         }
     }
-};
+
+    // Обработка запрошенных действий (отправка артефактов)
+    if (geminiResult.requestedAction) {
+        const action = geminiResult.requestedAction;
+        const artifacts = await Artifact.find({ userId: user._id });
+        const artMap = {};
+        artifacts.forEach(a => artMap[a.type] = a.value);
+
+        if (action === 'send_contract') {
+            if (user.contractFileId) {
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Твой контракт.</b> Протокол требует дисциплины.", parse_mode: 'HTML' });
+            } else if (artMap.contractText) {
+                await ctx.reply(`📜 <b>Твой контракт:</b>\n<i>${artMap.contractText}</i>`, { parse_mode: 'HTML' });
+            } else {
+                await ctx.reply("В моих архивах нет твоего контракта. Сначала сдай его.");
+            }
+        } else if (action === 'send_desires' && artMap.desires100?.length > 0) {
+            await ctx.reply(`🎯 <b>Твои хотелки (${artMap.desires100.length}):</b>\n` + artMap.desires100.map((d, i) => `${i + 1}. ${d}`).join('\n'), { parse_mode: 'HTML' });
+        } else if (action === 'send_smart_goals' && artMap.smartGoals10?.length > 0) {
+            await ctx.reply(`✅ <b>SMART-цели:</b>\n` + artMap.smartGoals10.map((g, i) => `${i + 1}. ${g}`).join('\n'), { parse_mode: 'HTML' });
+        } else if (action === 'send_strategy' && artMap.strategicGoals) {
+            await ctx.reply(`🌍 <b>Стратегия 2029:</b>\n${artMap.strategicGoals}`, { parse_mode: 'HTML' });
+        } else if (action === 'send_tactics' && artMap.tacticalGoals) {
+            await ctx.reply(`📈 <b>Тактика 2026:</b>\n${artMap.tacticalGoals}`, { parse_mode: 'HTML' });
+        } else if (action === 'send_analysis' && artMap.analysisOfCurrentSituation) {
+            await ctx.reply(`🔍 <b>Анализ ситуации:</b>\n${artMap.analysisOfCurrentSituation}`, { parse_mode: 'HTML' });
+        } else if (action === 'send_weekly_reports') {
+            const reports = await Artifact.find({ userId: user._id, type: 'weeklyReport' }).sort({ week: 1 });
+            if (reports.length > 0) {
+                const rText = reports.map(r => `🗓 <b>Неделя ${r.week}:</b>\n${r.value}`).join('\n\n---\n\n');
+                await ctx.reply(`📊 <b>История твоих недельных отчетов:</b>\n\n${rText}`, { parse_mode: 'HTML' });
+            } else {
+                await ctx.reply("В архивах пока нет твоих недельных отчетов. Сдай первый в ближайшее воскресенье.");
+            }
+        }
+    }
+}
 
 const handleStart = async (ctx) => {
     const telegramId = ctx.from.id;
@@ -364,10 +447,10 @@ export const handleCalendarNav = async (ctx) => {
     const [year, month] = ctx.match[1].split('_').map(Number);
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
-    
+
     const now = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = now.toFormat('yyyy-MM-dd');
-    
+
     await ctx.editMessageText("Выбери дату на календаре:", {
         reply_markup: createCalendarKeyboard(year, month, todayStr)
     });
@@ -475,7 +558,7 @@ const handleRemindLaterCallback = async (ctx) => {
     await ctx.answerCallbackQuery({ text: "Напомню позже!" });
 };
 
-const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText) => {
+const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText, options = {}) => {
     const now = new Date();
     if (user.lastGeminiCall) {
         const diffMs = now - user.lastGeminiCall;
@@ -497,19 +580,46 @@ const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText) => 
 
     const loadingMsg = await ctx.reply("⏳ <b>Сэнсэй анализирует...</b>", { parse_mode: 'HTML' });
 
-    const geminiResult = await geminiService.processUserMessage(contentParts, user.currentWeek, enrichedRoutineStatus);
+    const artifacts = await Artifact.find({ userId: user._id });
+    const existingMap = {};
+    artifacts.forEach(a => existingMap[a.type] = a.value);
 
-    try {
-        await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText, { parse_mode: 'HTML' });
-    } catch (e) {
+    const existingArtifacts = {
+        desires100: existingMap.desires100 || [],
+        smartGoals10: existingMap.smartGoals10 || [],
+        contractText: existingMap.contractText || '',
+        strategicGoals: existingMap.strategicGoals || '',
+        tacticalGoals: existingMap.tacticalGoals || '',
+        analysisOfCurrentSituation: existingMap.analysisOfCurrentSituation || '',
+        weeklyReports: artifacts.filter(a => a.type === 'weeklyReport').map(a => ({ week: a.week, value: a.value }))
+    };
+
+    // Если сегодня НЕ воскресенье, скрываем задачу weekly_report из списка для Gemini
+    if (dt.weekday !== 7) {
+        weekData.global_tasks = weekData.global_tasks?.filter(t => t.id !== 'weekly_report') || [];
+    }
+
+    const geminiResult = await geminiService.processUserMessage(contentParts, user.currentWeek, enrichedRoutineStatus, existingArtifacts);
+
+    if (!geminiResult.responseText || geminiResult.responseText.trim() === "") {
         try {
-            await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText);
-        } catch (e2) {
-            console.error("Failed to edit loading message:", e2.message);
+            await ctx.api.deleteMessage(ctx.chat.id, loadingMsg.message_id);
+        } catch (e) {
+            console.error("Failed to delete loading message:", e.message);
+        }
+    } else {
+        try {
+            await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText, { parse_mode: 'HTML' });
+        } catch (e) {
+            try {
+                await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText);
+            } catch (e2) {
+                console.error("Failed to edit loading message:", e2.message);
+            }
         }
     }
 
-    await processGeminiResult(ctx, user, geminiResult, originalText);
+    await processGeminiResult(ctx, user, geminiResult, originalText, options);
 };
 
 const handleText = async (ctx) => {
@@ -533,6 +643,8 @@ const handleText = async (ctx) => {
     }
 
     const text = ctx.message.text;
+
+    const lowerText = (text || "").toLowerCase();
 
     // Обработка установки сферы интересов (Onboarding)
     if (user.isSettingFocusArea) {
@@ -592,10 +704,10 @@ const handleText = async (ctx) => {
             { $group: { _id: "$currentWeek", count: { $sum: 1 } } },
             { $sort: { _id: 1 } }
         ]);
-        
+
         const totalActive = stats.reduce((acc, s) => acc + s.count, 0);
         let statsMsg = `<b>[АДМИН-ПАНЕЛЬ]</b>\n\nВсего активных: <b>${totalActive}</b>\n\n`;
-        
+
         if (stats.length > 0) {
             stats.forEach(s => {
                 statsMsg += `Неделя ${s._id}: <b>${s.count}</b>\n`;
@@ -603,7 +715,7 @@ const handleText = async (ctx) => {
         } else {
             statsMsg += "В системе пока нет активных подопечных.";
         }
-        
+
         return ctx.reply(statsMsg, { parse_mode: 'HTML' });
     }
     if (text === "ℹ️ Помощь и Правила") {
@@ -774,10 +886,6 @@ const handlePhoto = async (ctx) => {
         const photoBase64 = await downloadFileAsBase64(fileUrl);
 
         const captionText = ctx.message.caption || '';
-        if (user.currentWeek === 2 && captionText.toLowerCase().includes('контракт')) {
-            user.contractFileId = largestPhoto.file_id;
-            await user.save();
-        }
 
         const contentParts = [
             {
@@ -792,7 +900,7 @@ const handlePhoto = async (ctx) => {
         ];
 
         const originalText = captionText ? `[Фото] ${captionText}` : "[Фото]";
-        await sendToGeminiAndRespond(ctx, user, contentParts, originalText);
+        await sendToGeminiAndRespond(ctx, user, contentParts, originalText, { photoId: largestPhoto.file_id });
     } catch (error) {
         console.error("Photo processing error:", error);
         await ctx.reply("Ошибка при обработке фото. Попробуй ещё раз или опиши словами.");

@@ -35,5 +35,8 @@ const reportSchema = new mongoose.Schema({
     timestamps: true,
 });
 
+// TTL индекс: удаление отчетов через 120 дней (~4 месяца)
+reportSchema.index({ createdAt: 1 }, { expireAfterSeconds: 10368000 });
+
 const Report = mongoose.model('Report', reportSchema);
 export default Report;
