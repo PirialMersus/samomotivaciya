@@ -7,6 +7,7 @@ import { InlineKeyboard } from 'grammy';
 import { DateTime } from 'luxon';
 import { getTasksMessage } from './task.service.js';
 import { getTone } from '../utils/tone.js';
+import * as geminiService from './gemini.js';
 
 const setupCronJobs = (bot) => {
     // Единый джоб, работающий каждые 5 минут
@@ -25,12 +26,12 @@ const setupCronJobs = (bot) => {
 
                         const tone = getTone(user.currentWeek);
                         let morningHeader = `<b>${tone.greeting}</b>\n`;
-                        
+
                         if (user.currentDay === 1) {
                             morningHeader += `Поздравляю с переходом на новую неделю! Твое новое звание: <b>${tone.label}</b>. 🏆\n\n`;
                         }
                         morningHeader += `07:00 на твоих часах.\n\n`;
-                        
+
                         if (user.currentWeek === 2) {
                             morningHeader += `Встал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n\n`;
                         } else if (user.currentWeek === 4) {
@@ -39,7 +40,7 @@ const setupCronJobs = (bot) => {
                             morningHeader += `Ниже твоя рутина на сегодня. Жми кнопки по мере выполнения.\n\n`;
                         }
 
-                        await bot.api.sendMessage(user.telegramId, morningHeader + tasksData.text, { 
+                        await bot.api.sendMessage(user.telegramId, morningHeader + tasksData.text, {
                             parse_mode: 'HTML',
                             reply_markup: tasksData.reply_markup
                         });
@@ -68,17 +69,10 @@ const setupCronJobs = (bot) => {
                     if (dt.hour >= 9 && dt.hour <= 18) {
                         // Шанс примерно раз в день (с вероятностью 0.0075 каждые 5 минут)
                         if (Math.random() < 0.0075) {
-                            if (user.focusArea) {
-                                const tone = getTone(user.currentWeek);
-                                const reminder = await generateFocusReminder(user.focusArea, user.currentWeek, tone);
-                                await bot.api.sendMessage(user.telegramId, `🔔 <b>Напоминание фокуса:</b>\n\n${reminder}`, { parse_mode: 'HTML' });
-                            } else if (user.currentWeek === 2) {
-                                await bot.api.sendMessage(user.telegramId, "<b>Сэнсэй видит всё.</b> Ты сейчас в лифте или на лестнице? Оправданий не принимаю.", { parse_mode: 'HTML' });
-                            } else if (user.currentWeek === 3) {
-                                await bot.api.sendMessage(user.telegramId, "<b>ПРОВЕРКА ВНИМАНИЯ.</b> Куда сейчас направлено твое внимание? В себя? На других? На цели? Или ты витаешь в облаках? Вернись в центр.", { parse_mode: 'HTML' });
-                            } else if (user.currentWeek === 7) {
-                                await bot.api.sendMessage(user.telegramId, "<b>Сэнсэй на связи.</b> Какой звук ты услышал первым? Какой образ увидел? Или сначала было ощущение? Не дай привычке управлять твоим восприятием.", { parse_mode: 'HTML' });
-                            }
+                            const tone = getTone(user.currentWeek);
+                            const reminder = await geminiService.generateFocusReminder(user.focusArea, user.currentWeek, tone);
+                            const header = user.focusArea ? "🔔 <b>Напоминание фокуса:</b>" : "🔔 <b>Сэнсэй на связи:</b>";
+                            await bot.api.sendMessage(user.telegramId, `${header}\n\n${reminder}`, { parse_mode: 'HTML' });
                         }
                     }
 
@@ -166,7 +160,11 @@ const setupCronJobs = (bot) => {
                             if (hasUndone) warningParts.push("невыполненные задачи рутины");
                             if (!hasReportToday) warningParts.push("не сдан дневной отчёт");
                             const tone = getTone(user.currentWeek);
-                            await bot.api.sendMessage(user.telegramId, `<b>ВНИМАНИЕ!</b> 23:30. У тебя: ${warningParts.join(' и ')}. ${tone.warning}`, { parse_mode: 'HTML' });
+                            let message = `<b>ВНИМАНИЕ!</b> 23:30. У тебя: ${warningParts.join(' и ')}. ${tone.warning}`;
+                            if (user.lastConfessionDate !== todayStr) {
+                                message += `\n\n<i>Если ты что-то нарушил или не доделал — нажми кнопку «🙏 Признать проступок» в списке задач, чтобы искупить вину честностью.</i>`;
+                            }
+                            await bot.api.sendMessage(user.telegramId, message, { parse_mode: 'HTML' });
                         }
                     }
 
@@ -174,7 +172,7 @@ const setupCronJobs = (bot) => {
                         const dtYesterday = dt.minus({ days: 1 });
                         const yesterdayStr = dtYesterday.toFormat('yyyy-MM-dd');
                         const weekData = methodology.weeks[user.currentWeek];
-                        
+
                         user.currentDay = (user.currentDay || 1) + 1;
 
                         if (!weekData) {
@@ -213,21 +211,31 @@ const setupCronJobs = (bot) => {
                             let reasonParts = [];
                             if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");
                             if (!hadReportYesterday) reasonParts.push("нет дневного отчёта");
-                            
+
                             // НОВОЕ: Страйк за глобальные задачи после 7-го дня
                             if (user.currentDay > 7 && !user.isReadyForNextWeek) {
                                 reasonParts.push("невыполненные глобальные задачи недели");
                             }
 
                             if (reasonParts.length > 0) {
-                                user.strikes = (user.strikes || 0) + 1;
-                                
-                                if (user.strikes >= 5) {
-                                    user.frozen = true;
-                                    await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 5 страйков. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
+                                if (user.lastConfessionDate === yesterdayStr) {
+                                    await bot.api.sendMessage(user.telegramId, "⚡️ <b>Сэнсэй видит твой грех, но слышит и твое признание.</b>\nЗа честность страйк отменяю. Отработай искуплением и завтра будь чист.", { parse_mode: 'HTML' });
                                 } else {
-                                    const tone = getTone(user.currentWeek);
-                                    await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/5 страйков.`, { parse_mode: 'HTML' });
+                                    user.strikes = (user.strikes || 0) + 1;
+                                    
+                                    if (user.strikes >= 5) {
+                                        const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
+                                        if (isCreator) {
+                                            user.strikes = 0;
+                                            await bot.api.sendMessage(user.telegramId, "<b>[АДМИН-СТАТУС]</b> Ты набрал 5 страйков, но как создатель системы ты выше блокировок. Страйки обнулены. Но Сэнсэй всё равно недоволен.", { parse_mode: 'HTML' });
+                                        } else {
+                                            user.frozen = true;
+                                            await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 5 страйков. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
+                                        }
+                                    } else {
+                                        const tone = getTone(user.currentWeek);
+                                        await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/5 страйков.`, { parse_mode: 'HTML' });
+                                    }
                                 }
                             }
                             await user.save();
@@ -238,7 +246,7 @@ const setupCronJobs = (bot) => {
                     console.error(`Failed cron for user ${user.telegramId}`, e.message);
                 }
             }
-            
+
             // Пинг Healthchecks для мониторинга работоспособности
             try {
                 const https = await import('https');
@@ -259,10 +267,10 @@ const setupCronJobs = (bot) => {
         try {
             console.log("Running auto-cleanup job (03:00)...");
             const thirtyDaysAgo = DateTime.now().minus({ days: 30 }).toJSDate();
-            
+
             // Находим пользователей, у которых lastActivityAt < thirtyDaysAgo
             const inactiveUsers = await User.find({ lastActivityAt: { $lt: thirtyDaysAgo } });
-            
+
             for (const user of inactiveUsers) {
                 console.log(`Cleaning up inactive user: ${user.telegramId}`);
                 await Report.deleteMany({ userId: user._id });

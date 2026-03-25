@@ -126,6 +126,10 @@ const userSchema = new mongoose.Schema({
     isSettingWeek: {
         type: Boolean,
         default: false
+    },
+    lastConfessionDate: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true,

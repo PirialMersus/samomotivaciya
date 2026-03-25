@@ -1,5 +1,6 @@
 import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
 import { InlineKeyboard } from 'grammy';
+import { DateTime } from 'luxon';
 import CustomTask from '../models/CustomTask.js';
 
 export const getTasksMessage = async (user, todayStr) => {
@@ -57,7 +58,21 @@ export const getTasksMessage = async (user, todayStr) => {
         }
     });
 
+    // Добавляем кнопку "Признать проступок", если сегодня еще не было признания
+    if (user.lastConfessionDate !== todayStr) {
+        taskKeyboard.text("🙏 Признать проступок", "confess_start").row();
+    }
+
+    // Добавляем кнопки отчетов
+    const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
+    
     taskKeyboard.text("➕ Добавить свою задачу", "add_task_step_title").row();
+    taskKeyboard.text("📝 Сдать отчет за день", "submit_report_start").row();
+    
+    // Если сегодня воскресенье (7) - добавляем кнопку недельного отчета
+    if (dt.weekday === 7) {
+        taskKeyboard.text("📊 Сдать недельный отчет", "submit_weekly_report_start").row();
+    }
 
     customTasks.filter(t => !t.isDone).forEach(t => {
         taskKeyboard.text(`✅ ${t.title}`, `custom_done:${t._id}`).row();
