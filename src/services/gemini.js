@@ -38,7 +38,7 @@ export const processUserMessage = async (contentParts, userWeek, routineStatusTe
 
 ИЗВЛЕЧЕНИЕ АРТЕФАКТОВ (extracted_artifacts):
 Если подопечный прислал текст или фото с "100 хотелками", "SMART-целями", "Контрактом", "Целями до 2029/2026", "Анализом ситуации" или "Недельным отчетом":
-1. "desires": Массив строк.
+1. "desires": Массив строк. ИЗВЛЕКАЙ ВСЕ ПУНКТЫ БЕЗ ИСКЛЮЧЕНИЯ (даже если их 114 или больше). НЕ ОБРЕЗАЙ СПИСОК.
 2. "smart_goals": Массив строк.
 3. "strategic_goals": Строка (цели на 3-5 лет).
 4. "tactical_goals": Строка (цели до конца 2026).
@@ -113,6 +113,7 @@ ${globalTasksList}
       systemInstruction: systemInstruction,
       generationConfig: {
         responseMimeType: "application/json",
+        maxOutputTokens: 16384,
       },
     });
 

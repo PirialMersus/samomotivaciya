@@ -11,6 +11,7 @@ import { getTone } from '../utils/tone.js';
 import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
 import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
 import { createCalendarKeyboard } from '../keyboards/calendar.js';
+import { sendLongMessage } from '../utils/telegram.js';
 import https from 'https';
 import http from 'http';
 
@@ -141,7 +142,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
         const exemptionMessages = geminiResult.exemptions.map(
             ex => `• <b>${ex.task_id}</b>: ${ex.reason}. Альтернатива: <i>${ex.alternative}</i>`
         );
-        await ctx.reply(`🩺 <b>Сэнсэй выдал освобождение:</b>\n\n${exemptionMessages.join('\n')}\n\n<i>Освобождение действует до конца текущей недели.</i>`, { parse_mode: 'HTML' });
+        await sendLongMessage(ctx, `🩺 <b>Сэнсэй выдал освобождение:</b>\n\n${exemptionMessages.join('\n')}\n\n<i>Освобождение действует до конца текущей недели.</i>`, { parse_mode: 'HTML' });
     }
 
     if (geminiResult.isDailyReportAccepted) {
@@ -188,7 +189,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
             if (remainingTasks.length > 0) {
                 statusMsg += `\nДля перехода на следующую неделю нужно выполнить:\n— ${remainingTasks.join('\n— ')}`;
             }
-            await ctx.reply(`<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
+            await sendLongMessage(ctx, `<b>Сэнсэй:</b> ${statusMsg}`, { parse_mode: 'HTML' });
         }
         await user.save();
     }
@@ -232,20 +233,22 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
                 await ctx.reply("В моих архивах нет твоего контракта. Сначала сдай его.");
             }
         } else if (action === 'send_desires' && artMap.desires100?.length > 0) {
-            await ctx.reply(`🎯 <b>Твои хотелки (${artMap.desires100.length}):</b>\n` + artMap.desires100.map((d, i) => `${i + 1}. ${d}`).join('\n'), { parse_mode: 'HTML' });
+            const text = `🎯 <b>Твои хотелки (${artMap.desires100.length}):</b>\n` + artMap.desires100.map((d, i) => `${i + 1}. ${d}`).join('\n');
+            await sendLongMessage(ctx, text, { parse_mode: 'HTML' });
         } else if (action === 'send_smart_goals' && artMap.smartGoals10?.length > 0) {
-            await ctx.reply(`✅ <b>SMART-цели:</b>\n` + artMap.smartGoals10.map((g, i) => `${i + 1}. ${g}`).join('\n'), { parse_mode: 'HTML' });
+            const text = `✅ <b>SMART-цели:</b>\n` + artMap.smartGoals10.map((g, i) => `${i + 1}. ${g}`).join('\n');
+            await sendLongMessage(ctx, text, { parse_mode: 'HTML' });
         } else if (action === 'send_strategy' && artMap.strategicGoals) {
-            await ctx.reply(`🌍 <b>Стратегия 2029:</b>\n${artMap.strategicGoals}`, { parse_mode: 'HTML' });
+            await sendLongMessage(ctx, `🌍 <b>Стратегия 2029:</b>\n${artMap.strategicGoals}`, { parse_mode: 'HTML' });
         } else if (action === 'send_tactics' && artMap.tacticalGoals) {
-            await ctx.reply(`📈 <b>Тактика 2026:</b>\n${artMap.tacticalGoals}`, { parse_mode: 'HTML' });
+            await sendLongMessage(ctx, `📈 <b>Тактика 2026:</b>\n${artMap.tacticalGoals}`, { parse_mode: 'HTML' });
         } else if (action === 'send_analysis' && artMap.analysisOfCurrentSituation) {
-            await ctx.reply(`🔍 <b>Анализ ситуации:</b>\n${artMap.analysisOfCurrentSituation}`, { parse_mode: 'HTML' });
+            await sendLongMessage(ctx, `🔍 <b>Анализ ситуации:</b>\n${artMap.analysisOfCurrentSituation}`, { parse_mode: 'HTML' });
         } else if (action === 'send_weekly_reports') {
             const reports = await Artifact.find({ userId: user._id, type: 'weeklyReport' }).sort({ week: 1 });
             if (reports.length > 0) {
                 const rText = reports.map(r => `🗓 <b>Неделя ${r.week}:</b>\n${r.value}`).join('\n\n---\n\n');
-                await ctx.reply(`📊 <b>История твоих недельных отчетов:</b>\n\n${rText}`, { parse_mode: 'HTML' });
+                await sendLongMessage(ctx, `📊 <b>История твоих недельных отчетов:</b>\n\n${rText}`, { parse_mode: 'HTML' });
             } else {
                 await ctx.reply("В архивах пока нет твоих недельных отчетов. Сдай первый в ближайшее воскресенье.");
             }
@@ -586,16 +589,49 @@ const handleRemindLaterCallback = async (ctx) => {
     await ctx.answerCallbackQuery({ text: "Напомню позже!" });
 };
 
-const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText, options = {}) => {
+const messageBuffers = new Map();
+
+const bufferContent = async (ctx, user, part, originalText) => {
+    const userId = ctx.from.id;
     const now = new Date();
-    if (user.lastGeminiCall) {
-        const diffMs = now - user.lastGeminiCall;
-        if (diffMs < 60000) { // 1 минута
-            const waitSec = Math.ceil((60000 - diffMs) / 1000);
-            return ctx.reply(`⚠️ <b>Сэнсэй занят.</b> Подожди ${waitSec} сек. Не части, я не справочное бюро.`, { parse_mode: 'HTML' });
+
+    if (!messageBuffers.has(userId)) {
+        if (user.lastGeminiCall) {
+            const diffMs = now - user.lastGeminiCall;
+            if (diffMs < 60000) {
+                const waitSec = Math.ceil((60000 - diffMs) / 1000);
+                return ctx.reply(`⚠️ <b>Сэнсэй занят.</b> Подожди ${waitSec} сек. Не части, я не справочное бюро.`, { parse_mode: 'HTML' });
+            }
         }
+
+        messageBuffers.set(userId, {
+            parts: [],
+            originalTexts: [],
+            timer: null,
+            ctx: ctx,
+            user: user
+        });
     }
-    user.lastGeminiCall = now;
+
+    const buffer = messageBuffers.get(userId);
+    buffer.parts.push(part);
+    if (originalText) buffer.originalTexts.push(originalText);
+    buffer.ctx = ctx;
+
+    if (buffer.timer) clearTimeout(buffer.timer);
+
+    buffer.timer = setTimeout(async () => {
+        const finalBuffer = messageBuffers.get(userId);
+        if (!finalBuffer) return;
+        messageBuffers.delete(userId);
+
+        const combinedText = finalBuffer.originalTexts.join('\n\n');
+        await sendToGeminiAndRespond(finalBuffer.ctx, finalBuffer.user, finalBuffer.parts, combinedText);
+    }, 1000);
+};
+
+const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText, options = {}) => {
+    user.lastGeminiCall = new Date();
     await user.save();
 
     const weekData = methodology.weeks[user.currentWeek];
@@ -635,6 +671,13 @@ const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText, opt
         } catch (e) {
             console.error("Failed to delete loading message:", e.message);
         }
+    } else if (geminiResult.responseText.length > 4000) {
+        try {
+            await ctx.api.deleteMessage(ctx.chat.id, loadingMsg.message_id);
+        } catch (e) {
+            console.error("Failed to delete loading message:", e.message);
+        }
+        await sendLongMessage(ctx, geminiResult.responseText, { parse_mode: 'HTML' });
     } else {
         try {
             await ctx.api.editMessageText(ctx.chat.id, loadingMsg.message_id, geminiResult.responseText, { parse_mode: 'HTML' });
@@ -817,8 +860,7 @@ const handleText = async (ctx) => {
         }
     }
 
-    const contentParts = [text];
-    await sendToGeminiAndRespond(ctx, user, contentParts, text);
+    await bufferContent(ctx, user, text, text);
 };
 
 const handleVoice = async (ctx) => {
@@ -860,17 +902,12 @@ const handleVoice = async (ctx) => {
 
         const mimeType = voiceFile.mime_type || 'audio/ogg';
 
-        const contentParts = [
-            {
-                inlineData: {
-                    mimeType: mimeType,
-                    data: audioBase64
-                }
-            },
-            "Выше прикреплено аудиосообщение от подопечного. Проанализируй его содержание."
-        ];
-
-        await sendToGeminiAndRespond(ctx, user, contentParts, "[Аудиосообщение]");
+        await bufferContent(ctx, user, {
+            inlineData: {
+                mimeType: mimeType,
+                data: audioBase64
+            }
+        }, "[Аудиосообщение]");
     } catch (error) {
         console.error("Voice processing error:", error);
         await ctx.reply("Ошибка при обработке голосового. Попробуй ещё раз или напиши текстом.");
@@ -915,20 +952,18 @@ const handlePhoto = async (ctx) => {
 
         const captionText = ctx.message.caption || '';
 
-        const contentParts = [
-            {
-                inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: photoBase64
-                }
-            },
-            captionText
-                ? `Подопечный прислал фото с подписью: "${captionText}". Проанализируй изображение и текст.`
-                : "Подопечный прислал фото без подписи. Проанализируй изображение и определи, что он хочет показать."
-        ];
+        if (captionText) {
+            await bufferContent(ctx, user, `Подопечный прислал фото с подписью: "${captionText}". Проанализируй изображение и текст.`, `[Фото] ${captionText}`);
+        } else {
+            await bufferContent(ctx, user, "Подопечный прислал фото без подписи. Проанализируй изображение и определи, что он хочет показать.", "[Фото]");
+        }
 
-        const originalText = captionText ? `[Фото] ${captionText}` : "[Фото]";
-        await sendToGeminiAndRespond(ctx, user, contentParts, originalText, { photoId: largestPhoto.file_id });
+        await bufferContent(ctx, user, {
+            inlineData: {
+                mimeType: 'image/jpeg',
+                data: photoBase64
+            }
+        });
     } catch (error) {
         console.error("Photo processing error:", error);
         await ctx.reply("Ошибка при обработке фото. Попробуй ещё раз или опиши словами.");
