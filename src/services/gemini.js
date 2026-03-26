@@ -65,6 +65,14 @@ ${artifactsContext}
 - Если время после 21:00 — это вечерний отчет. Здесь за невыполненную рутину нужно спрашивать строго.
 - Если не вся рутина выполнена, а подопечный пишет "всё сделал" — в любом случае укажи на нестыковку, но учитывай время (днем — как напоминание, временем — как фиксацию косяка).
 
+ПОСТ-ОТЧЁТНЫЕ ЗАДАЧИ:
+Задачи «Шавасана (перед сном)» и «Ежедневный отчет» выполняются ПОСЛЕ сдачи отчёта. Они физически не могут быть отмечены до сдачи отчёта. НЕ РУГАЙ за то, что они не отмечены — просто мягко напомни: «Не забудь сделать Шавасану перед сном». Не считай их невыполненными при анализе рутины.
+
+ОСВОБОЖДЕНИЯ ОТ ЗАДАЧ (exemptions):
+1. ОБЪЕКТИВНЫЕ ПРИЧИНЫ: травма, болезнь, форс-мажор. Давай освобождение с адекватной альтернативой (ходьба вместо бега и т.д.).
+2. ЧЕСТНОЕ ПРИЗНАНИЕ (Искупление): Если подопечный честно признается, что НЕ ВЫПОЛНИЛ задачу по своей вине (лень, забыл, прокрастинация), но проявляет искреннее раскаяние — ты МОЖЕШЬ дать освобождение от страйка за эту задачу, но ОБЯЗАТЕЛЬНО назначь суровое искупление (penance) в поле alternative (например: "100 отжиманий", "холодный душ", "дополнительный час учебы").
+НЕ ДАВАЙ освобождение просто так. Либо объективная причина + альтернатива, либо честное раскаяние + суровое искупление. Если юзер врет или оправдывается — никаких освобождений.
+
 ПРАВИЛА:
 - БУДЬ СТРОЖЕ: Никакой пощады. Халтура не принимается.
 - БУДЬ КРАТОК: до 3000 символов.
@@ -82,6 +90,7 @@ ${globalTasksList}
   "response_text": "Твой текстовый ответ",
   "is_daily_report_accepted": true/false,
   "completed_tasks": ["task_id"],
+  "exemptions": [{"task_id": "id_задачи", "reason": "причина", "alternative": "альтернатива"}],
   "requested_action": "send_contract" | "send_desires" | "send_smart_goals" | "send_strategy" | "send_tactics" | "send_analysis" | "send_weekly_reports" | null,
   "is_contract_photo": true/false,
   "extracted_artifacts": {
@@ -127,6 +136,7 @@ ${globalTasksList}
     const isDailyReportAccepted = parsed.is_daily_report_accepted === true || parsed.is_report_accepted === true;
     const completedTasks = Array.isArray(parsed.completed_tasks) ? parsed.completed_tasks : [];
     const artifacts = parsed.extracted_artifacts || {};
+    const exemptions = Array.isArray(parsed.exemptions) ? parsed.exemptions : [];
 
     let finalResponseText = parsed.response_text || "";
     if (isDailyReportAccepted || completedTasks.length > 0) {
@@ -140,7 +150,8 @@ ${globalTasksList}
       hasWhiningPenalty: (parsed.response_text || '').includes('50 отжиманий'),
       isContractPhoto: parsed.is_contract_photo || false,
       extractedArtifacts: artifacts,
-      requestedAction: parsed.requested_action || null
+      requestedAction: parsed.requested_action || null,
+      exemptions
     };
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -148,7 +159,8 @@ ${globalTasksList}
       responseText: "Система сбоит. Попробуй ещё раз. [ОШИБКА]",
       isDailyReportAccepted: false,
       completedTasks: [],
-      hasWhiningPenalty: false
+      hasWhiningPenalty: false,
+      exemptions: []
     };
   }
 };

@@ -127,9 +127,13 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    lastConfessionDate: {
-        type: String,
-        default: ''
+    exemptedTasks: {
+        type: [{
+            taskId: String,
+            reason: String,
+            alternative: String
+        }],
+        default: []
     }
 }, {
     timestamps: true,

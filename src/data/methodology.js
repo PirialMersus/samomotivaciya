@@ -20,9 +20,9 @@ const methodology = {
     { id: "morning_exercise", title: "Зарядка (7 мин)", type: "physical" },
     { id: "social_contacts", title: "3 новых контакта", type: "social" },
     { id: "new_place", title: "1 новое место", type: "exploration" },
-    { id: "shavasana", title: "Шавасана (перед сном)", type: "mental" },
+    { id: "shavasana", title: "Шавасана (перед сном)", type: "mental", postReport: true },
     { id: "meditation_peace", title: "Медитация покоя (днем)", type: "mental" },
-    { id: "daily_report_submitted", title: "Ежедневный отчет (отправил отчет боту)", type: "discipline" }
+    { id: "daily_report_submitted", title: "Ежедневный отчет (отправил отчет боту)", type: "discipline", postReport: true }
   ],
   // Новая «прошивка» — добавляется со 2-й недели и до конца
   week2_persistent_routine: [

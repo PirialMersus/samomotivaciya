@@ -58,11 +58,6 @@ export const getTasksMessage = async (user, todayStr) => {
         }
     });
 
-    // Добавляем кнопку "Признать проступок", если сегодня еще не было признания
-    if (user.lastConfessionDate !== todayStr) {
-        taskKeyboard.text("🙏 Признать проступок", "confess_start").row();
-    }
-
     // Добавляем кнопки отчетов
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     

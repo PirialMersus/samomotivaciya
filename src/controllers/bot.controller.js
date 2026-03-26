@@ -126,6 +126,24 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
         }
     }
 
+    if (geminiResult.exemptions && geminiResult.exemptions.length > 0) {
+        for (const exemption of geminiResult.exemptions) {
+            const alreadyExempted = user.exemptedTasks.some(existing => existing.taskId === exemption.task_id);
+            if (!alreadyExempted) {
+                user.exemptedTasks.push({
+                    taskId: exemption.task_id,
+                    reason: exemption.reason,
+                    alternative: exemption.alternative
+                });
+            }
+        }
+
+        const exemptionMessages = geminiResult.exemptions.map(
+            ex => `• <b>${ex.task_id}</b>: ${ex.reason}. Альтернатива: <i>${ex.alternative}</i>`
+        );
+        await ctx.reply(`🩺 <b>Сэнсэй выдал освобождение:</b>\n\n${exemptionMessages.join('\n')}\n\n<i>Освобождение действует до конца текущей недели.</i>`, { parse_mode: 'HTML' });
+    }
+
     if (geminiResult.isDailyReportAccepted) {
         let dailyTotal = 0;
         let dailyDone = 0;
@@ -392,53 +410,6 @@ const handleTaskDoneCallback = async (ctx) => {
             console.error(e);
         }
     }
-};
-
-const handleConfessStartCallback = async (ctx) => {
-    const keyboard = new InlineKeyboard()
-        .text("🙏 Планка (5 мин)", "confess_opt:plank").row()
-        .text("🧘 Киба-дати (10 мин)", "confess_opt:kiba").row()
-        .text("💪 100 отжиманий", "confess_opt:pushups").row()
-        .text("🦵 200 приседаний", "confess_opt:squats").row()
-        .text("🤐 День без еды", "confess_opt:fasting").row()
-        .text("❄️ Обливание ледяной водой", "confess_opt:cold").row()
-        .text("🎤 Признание Сэнсэю (5 мин)", "confess_opt:voice").row()
-        .text("🔙 Отмена", "show_tasks");
-
-    await ctx.editMessageText("<b>Искупление через Честность.</b>\n\nПризнание проступка — это первый шаг к силе. Выбери одно из упражнений ниже. Выполнив его, ты очистишь этот день от лжи и страйков.\n\n<i>«Тот, кто упал и признался, стоит выше того, кто стоит и врет.»</i>", {
-        parse_mode: 'HTML',
-        reply_markup: keyboard
-    });
-    await ctx.answerCallbackQuery();
-};
-
-const handleConfessOptionCallback = async (ctx) => {
-    const user = await User.findOne({ telegramId: ctx.from.id });
-    if (!user) return;
-
-    const option = ctx.callbackQuery.data.split(':')[1];
-    const tz = user.timezone || 'Europe/Kyiv';
-    const todayStr = DateTime.now().setZone(tz).toFormat('yyyy-MM-dd');
-
-    user.lastConfessionDate = todayStr;
-    await user.save();
-
-    const optionsMap = {
-        'plank': 'Планка (5 мин)',
-        'kiba': 'Киба-дати (10 мин)',
-        'pushups': '100 отжиманий',
-        'squats': '200 приседаний',
-        'fasting': 'День без еды',
-        'cold': 'Обливание ледяной водой',
-        'voice': 'Голосовое признание (5 мин)'
-    };
-
-    const selectedName = optionsMap[option] || "Искупление";
-
-    await ctx.editMessageText(`<b>ПРИНЯТО.</b>\n\nТвоя честность зафиксирована. Твое искупление на сегодня: <b>${selectedName}</b>.\n\nВыполни его прямо сейчас или до конца дня. Сэнсэй верит тебе на слово — кнопку «выполнено» нажимать не нужно. Сегодня страйка за проступки не будет.`, {
-        parse_mode: 'HTML'
-    });
-    await ctx.answerCallbackQuery();
 };
 
 const handleSubmitReportStartCallback = async (ctx) => {
@@ -985,6 +956,5 @@ export {
     handleTimezoneCallback, handleTasks, handleTaskDoneCallback,
     handleCustomTaskCallback, handleShowLectureCallback, handleRemindLaterCallback,
     handleText, handleVoice, handlePhoto, handleMyChatMember,
-    handleConfessStartCallback, handleConfessOptionCallback,
     handleSubmitReportStartCallback, handleSubmitWeeklyReportCallback
 };

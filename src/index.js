@@ -84,8 +84,6 @@ const startApplication = async () => {
     bot.callbackQuery(/^calendar_nav:(.+)$/, botControllers.handleCalendarNav);
     bot.callbackQuery('show_lecture', botControllers.handleShowLectureCallback);
     bot.callbackQuery('remind_later', botControllers.handleRemindLaterCallback);
-    bot.callbackQuery('confess_start', botControllers.handleConfessStartCallback);
-    bot.callbackQuery(/^confess_opt:(.+)$/, botControllers.handleConfessOptionCallback);
     bot.callbackQuery('show_tasks', botControllers.handleTasks);
     bot.callbackQuery('submit_report_start', botControllers.handleSubmitReportStartCallback);
     bot.callbackQuery('submit_weekly_report_start', botControllers.handleSubmitWeeklyReportCallback);
