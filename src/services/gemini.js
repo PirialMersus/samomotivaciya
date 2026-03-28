@@ -88,7 +88,7 @@ ${globalTasksList}
 ОТВЕТ СТРОГО В JSON:
 {
   "response_text": "Твой текстовый ответ",
-  "is_daily_report_accepted": true/false,
+  "is_daily_report_accepted": true/false (ВАЖНО: Устанавливай в true ТОЛЬКО если пользователь ОСОЗНАННО СДАЕТ ИТОГОВЫЙ ЕЖЕДНЕВНЫЙ ОТЧЕТ ЗА ДЕНЬ. Если он просто скинул выполненную глобальную задачу, скриншот, эссе или задал вопрос без общих итогов дня — СТРОГО УСТАНАВЛИВАЙ false),
   "completed_tasks": ["task_id"],
   "exemptions": [{"task_id": "id_задачи", "reason": "причина", "alternative": "альтернатива"}],
   "requested_action": "send_contract" | "send_desires" | "send_smart_goals" | "send_strategy" | "send_tactics" | "send_analysis" | "send_weekly_reports" | null,

@@ -36,10 +36,26 @@ const setupCronJobs = (bot) => {
                         const tone = getTone(user.currentWeek);
                         let morningHeader = `<b>${tone.greeting}</b>\n`;
 
-                        if (user.currentDay === 1) {
-                            morningHeader += `Поздравляю с переходом на новую неделю! Твое новое звание: <b>${tone.label}</b>. 🏆\n\n`;
-                        }
                         morningHeader += `07:00 на твоих часах.\n\n`;
+
+                        if (user.currentDay === 1) {
+                            const imagePath = `src/assets/images/week_${user.currentWeek}.png`;
+                            
+                            let captionText;
+                            if (user.currentWeek === 1) {
+                                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРВОЙ НЕДЕЛЕЙ ТВОЕЙ НОВОЙ ЖИЗНИ!</b> 🌟\n\nТвой путь начинается здесь. Твое звание: <b>${tone.label}</b>. Твоя задача — дисциплина и чистота.`;
+                            } else {
+                                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания.`;
+                            }
+                            
+                            const fs = await import('fs');
+                            if (fs.existsSync(imagePath)) {
+                                const grammyPkg = await import('grammy');
+                                await bot.api.sendPhoto(user.telegramId, new grammyPkg.InputFile(imagePath), { caption: captionText, parse_mode: 'HTML' });
+                            } else {
+                                await bot.api.sendMessage(user.telegramId, captionText, { parse_mode: 'HTML' });
+                            }
+                        }
 
                         if (user.currentWeek === 2) {
                             morningHeader += `Встал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n\n`;
@@ -212,8 +228,6 @@ const setupCronJobs = (bot) => {
                             user.strikes = 0;
                             user.exemptedTasks = [];
                             await user.save();
-                            const tone = getTone(user.currentWeek);
-                            await bot.api.sendMessage(user.telegramId, `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания. Жми /tasks и в бой.`, { parse_mode: 'HTML' });
                         } else {
                             let reasonParts = [];
                             if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");

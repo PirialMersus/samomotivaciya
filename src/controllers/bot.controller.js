@@ -146,6 +146,9 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
     }
 
     if (geminiResult.isDailyReportAccepted) {
+        user.progress = user.progress || new Map();
+        user.progress.set(`daily_report_submitted_${todayStr}`, true);
+        
         let dailyTotal = 0;
         let dailyDone = 0;
         if (weekData) {
@@ -732,9 +735,35 @@ const handleText = async (ctx) => {
         const weekNum = parseInt(text);
         if (!isNaN(weekNum) && weekNum >= 1 && weekNum <= 12) {
             user.currentWeek = weekNum;
+            user.currentDay = 1;
+            user.completedGlobalTasks = [];
+            user.totalRoutineDays = 0;
+            user.isReadyForNextWeek = false;
+            user.strikes = 0;
+            user.exemptedTasks = [];
             user.isSettingWeek = false;
             await user.save();
-            await ctx.reply(`Текущая неделя успешно изменена на <b>${weekNum}</b>.`, { parse_mode: 'HTML', reply_markup: createMainMenuKeyboard(true) });
+
+            const tone = getTone(user.currentWeek);
+            const imagePath = `src/assets/images/week_${user.currentWeek}.png`;
+            
+            let captionText;
+            if (user.currentWeek === 1) {
+                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРВОЙ НЕДЕЛЕЙ ТВОЕЙ НОВОЙ ЖИЗНИ!</b> 🌟\n\nТвой путь начинается здесь. Твое звание: <b>${tone.label}</b>. Твоя задача — дисциплина и чистота.`;
+            } else {
+                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания.`;
+            }
+
+            const fs = await import('fs');
+            const keyboard = createMainMenuKeyboard(true);
+            if (fs.existsSync(imagePath)) {
+                const { InputFile } = await import('grammy');
+                await ctx.replyWithPhoto(new InputFile(imagePath), { caption: captionText, parse_mode: 'HTML', reply_markup: keyboard });
+            } else {
+                await ctx.reply(captionText, { parse_mode: 'HTML', reply_markup: keyboard });
+            }
+
+            await handleTasks(ctx);
         } else {
             await ctx.reply("❌ Некорректный номер недели. Введи число от 1 до 12.");
         }
