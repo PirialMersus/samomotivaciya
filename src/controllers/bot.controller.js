@@ -12,6 +12,7 @@ import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCi
 import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
 import { createCalendarKeyboard } from '../keyboards/calendar.js';
 import { sendWeekWelcome } from '../services/welcome.service.js';
+import { sendLongMessage } from '../utils/telegram.js';
 import https from 'https';
 import http from 'http';
 
@@ -612,7 +613,8 @@ const bufferContent = async (ctx, user, part, originalText) => {
     const now = new Date();
 
     if (!messageBuffers.has(userId)) {
-        if (user.lastGeminiCall) {
+        const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
+        if (user.lastGeminiCall && !isCreator) {
             const diffMs = now - user.lastGeminiCall;
             if (diffMs < 60000) {
                 const waitSec = Math.ceil((60000 - diffMs) / 1000);
