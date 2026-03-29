@@ -8,6 +8,7 @@ import { DateTime } from 'luxon';
 import { getTasksMessage } from './task.service.js';
 import { getTone } from '../utils/tone.js';
 import * as geminiService from './gemini.js';
+import { sendWeekWelcome } from './welcome.service.js';
 
 const isTaskExemptedForUser = (taskId, user) => {
     if (!user.exemptedTasks || user.exemptedTasks.length === 0) return false;
@@ -30,32 +31,17 @@ const setupCronJobs = (bot) => {
                     const todayStr = dt.toFormat('yyyy-MM-dd');
 
                     if (dt.hour === 7 && dt.minute === 0) {
+                        if (user.currentDay === 1 && user.currentWeek > 1) {
+                            await sendWeekWelcome(bot, user, { includeTasks: true });
+                            continue;
+                        }
+
                         const tasksData = await getTasksMessage(user, todayStr);
                         if (!tasksData) continue;
 
                         const tone = getTone(user.currentWeek);
                         let morningHeader = `<b>${tone.greeting}</b>\n`;
-
                         morningHeader += `07:00 на твоих часах.\n\n`;
-
-                        if (user.currentDay === 1) {
-                            const imagePath = `src/assets/images/week_${user.currentWeek}.png`;
-                            
-                            let captionText;
-                            if (user.currentWeek === 1) {
-                                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРВОЙ НЕДЕЛЕЙ ТВОЕЙ НОВОЙ ЖИЗНИ!</b> 🌟\n\nТвой путь начинается здесь. Твое звание: <b>${tone.label}</b>. Твоя задача — дисциплина и чистота.`;
-                            } else {
-                                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания.`;
-                            }
-                            
-                            const fs = await import('fs');
-                            if (fs.existsSync(imagePath)) {
-                                const grammyPkg = await import('grammy');
-                                await bot.api.sendPhoto(user.telegramId, new grammyPkg.InputFile(imagePath), { caption: captionText, parse_mode: 'HTML' });
-                            } else {
-                                await bot.api.sendMessage(user.telegramId, captionText, { parse_mode: 'HTML' });
-                            }
-                        }
 
                         if (user.currentWeek === 2) {
                             morningHeader += `Встал. Выпил 500мл воды. Бросил лед в тазик. Начинай бег натощак. Доложи о готовности.\n\n`;

@@ -11,9 +11,24 @@ import { getTone } from '../utils/tone.js';
 import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
 import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
 import { createCalendarKeyboard } from '../keyboards/calendar.js';
-import { sendLongMessage } from '../utils/telegram.js';
+import { sendWeekWelcome } from '../services/welcome.service.js';
 import https from 'https';
 import http from 'http';
+
+const messageBuffers = new Map();
+const praiseBuffers = new Map();
+
+const bufferPraise = async (ctx, user, text) => {
+    const userId = ctx.from.id;
+    if (praiseBuffers.has(userId)) {
+        clearTimeout(praiseBuffers.get(userId));
+    }
+    const timer = setTimeout(async () => {
+        praiseBuffers.delete(userId);
+        await ctx.api.sendMessage(user.telegramId, `<b>Сэнсэй:</b> ${text}`, { parse_mode: 'HTML' });
+    }, 4000);
+    praiseBuffers.set(userId, timer);
+};
 
 const downloadFileAsBase64 = (fileUrl) => {
     return new Promise((resolve, reject) => {
@@ -408,7 +423,7 @@ const handleTaskDoneCallback = async (ctx) => {
     if (ctx.callbackQuery.message.text && ctx.callbackQuery.message.text.startsWith("Задача:")) {
         await ctx.editMessageText(`${ctx.callbackQuery.message.text.split('\n')[0]}\n\n<b>Выполнена ✅</b>`, { parse_mode: 'HTML' });
     } else {
-        await ctx.reply(`<b>Сэнсэй:</b> ${tone.praise}`, { parse_mode: 'HTML' });
+        await bufferPraise(ctx, user, tone.praise);
         try {
             await handleTasks(ctx);
         } catch (e) {
@@ -439,7 +454,7 @@ const handleCustomTaskCallback = async (ctx) => {
             task.isDone = true;
             await task.save();
             await ctx.answerCallbackQuery({ text: "Задача выполнена!" });
-            await ctx.reply(`<b>Сэнсэй:</b> Личная дисциплина — основа стержня. Красава.`, { parse_mode: 'HTML' });
+            await bufferPraise(ctx, user, "Личная дисциплина — основа стержня. Красава.");
         }
     } else if (action === 'custom_del') {
         await CustomTask.findByIdAndDelete(taskId);
@@ -592,8 +607,6 @@ const handleRemindLaterCallback = async (ctx) => {
     await ctx.answerCallbackQuery({ text: "Напомню позже!" });
 };
 
-const messageBuffers = new Map();
-
 const bufferContent = async (ctx, user, part, originalText) => {
     const userId = ctx.from.id;
     const now = new Date();
@@ -727,6 +740,10 @@ const handleText = async (ctx) => {
         await user.save();
         await ctx.reply(`Понял тебя. Твой фокус зафиксирован: <b>${user.focusArea}</b>.\nЯ буду использовать это, чтобы возвращать твое внимание к самому важному.`, { parse_mode: 'HTML' });
         await ctx.reply("Теперь ты в системе. Используй меню для навигации.", { reply_markup: createMainMenuKeyboard(isCreator) });
+
+        if (user.currentWeek === 1) {
+            await sendWeekWelcome(ctx, user, { includeTasks: true });
+        }
         return;
     }
 
@@ -744,26 +761,7 @@ const handleText = async (ctx) => {
             user.isSettingWeek = false;
             await user.save();
 
-            const tone = getTone(user.currentWeek);
-            const imagePath = `src/assets/images/week_${user.currentWeek}.png`;
-            
-            let captionText;
-            if (user.currentWeek === 1) {
-                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРВОЙ НЕДЕЛЕЙ ТВОЕЙ НОВОЙ ЖИЗНИ!</b> 🌟\n\nТвой путь начинается здесь. Твое звание: <b>${tone.label}</b>. Твоя задача — дисциплина и чистота.`;
-            } else {
-                captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания.`;
-            }
-
-            const fs = await import('fs');
-            const keyboard = createMainMenuKeyboard(true);
-            if (fs.existsSync(imagePath)) {
-                const { InputFile } = await import('grammy');
-                await ctx.replyWithPhoto(new InputFile(imagePath), { caption: captionText, parse_mode: 'HTML', reply_markup: keyboard });
-            } else {
-                await ctx.reply(captionText, { parse_mode: 'HTML', reply_markup: keyboard });
-            }
-
-            await handleTasks(ctx);
+            await sendWeekWelcome(ctx, user, { includeTasks: true });
         } else {
             await ctx.reply("❌ Некорректный номер недели. Введи число от 1 до 12.");
         }
