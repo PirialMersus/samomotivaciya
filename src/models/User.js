@@ -127,6 +127,14 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    lastFocusReminderDate: {
+        type: String,
+        default: ''
+    },
+    completedTraining: {
+        type: Boolean,
+        default: false
+    },
     exemptedTasks: {
         type: [{
             taskId: String,

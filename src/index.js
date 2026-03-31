@@ -33,20 +33,23 @@ const startApplication = async () => {
 
     // --- СЕКРЕТНЫЕ КОМАНДЫ АДМИНА ---
     bot.command('setweek', async (ctx) => {
-        // Используем переменную из .env для проверки прав
-        const ADMIN_ID = Number(process.env.ADMIN_TELEGRAM_ID);
+        const ADMIN_ID = Number(process.env.CREATOR_ID);
 
         if (ctx.from.id !== ADMIN_ID) return;
 
         const week = parseInt(ctx.message.text.split(' ')[1]);
         if (week >= 1 && week <= 12) {
             try {
-                await User.findOneAndUpdate(
-                    { chatId: ctx.from.id },
-                    { currentWeek: week },
-                    { upsert: true }
+                const user = await User.findOneAndUpdate(
+                    { telegramId: ctx.from.id },
+                    { currentWeek: week, currentDay: 1, completedGlobalTasks: [], totalRoutineDays: 0, isReadyForNextWeek: false },
+                    { new: true }
                 );
-                await ctx.reply(`📊 <b>Режим теста:</b> установлена неделя ${week}\n\nФилипп готов проверять отчеты по новым правилам.`, { parse_mode: 'HTML' });
+                if (user) {
+                    await ctx.reply(`📊 <b>Режим теста:</b> установлена неделя ${week}\n\nВсе счетчики сброшены. Филипп готов проверять отчеты по новым правилам.`, { parse_mode: 'HTML' });
+                } else {
+                    await ctx.reply('Сначала нажми /start, чтобы зарегистрироваться в системе.');
+                }
             } catch (err) {
                 console.error('Update week error:', err);
                 await ctx.reply('Ошибка при обновлении недели в базе.');
@@ -87,6 +90,7 @@ const startApplication = async () => {
     bot.callbackQuery('show_tasks', botControllers.handleTasks);
     bot.callbackQuery('submit_report_start', botControllers.handleSubmitReportStartCallback);
     bot.callbackQuery('submit_weekly_report_start', botControllers.handleSubmitWeeklyReportCallback);
+    bot.callbackQuery('restart_training', botControllers.handleRestartTraining);
 
     bot.on('message:voice', botControllers.handleVoice);
     bot.on('message:audio', botControllers.handleVoice);

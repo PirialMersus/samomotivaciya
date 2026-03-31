@@ -3,7 +3,7 @@ import User from '../models/User.js';
 import Report from '../models/Report.js';
 import CustomTask from '../models/CustomTask.js';
 import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 import { DateTime } from 'luxon';
 import { getTasksMessage } from './task.service.js';
 import { getTone } from '../utils/tone.js';
@@ -26,6 +26,8 @@ const setupCronJobs = (bot) => {
             const users = await User.find({ frozen: false });
             for (const user of users) {
                 try {
+                    if (user.completedTraining) continue;
+
                     const tz = user.timezone || 'Europe/Kyiv';
                     const dt = DateTime.now().setZone(tz);
                     const todayStr = dt.toFormat('yyyy-MM-dd');
@@ -74,11 +76,21 @@ const setupCronJobs = (bot) => {
                     }
 
                     if (dt.hour >= 9 && dt.hour <= 18) {
-                        if (Math.random() < 0.0075) {
-                            const tone = getTone(user.currentWeek);
-                            const reminder = await geminiService.generateFocusReminder(user.focusArea, user.currentWeek, tone);
-                            const header = user.focusArea ? "🔔 <b>Напоминание фокуса:</b>" : "🔔 <b>Сэнсэй на связи:</b>";
-                            await bot.api.sendMessage(user.telegramId, `${header}\n\n${reminder}`, { parse_mode: 'HTML' });
+                        const hasReceivedFocusToday = user.lastFocusReminderDate === todayStr;
+                        if (!hasReceivedFocusToday) {
+                            const currentTicks = (dt.hour - 9) * 12 + Math.floor(dt.minute / 5);
+                            const remainingTicks = 120 - currentTicks;
+                            const prob = remainingTicks > 0 ? 1 / remainingTicks : 1;
+
+                            if (Math.random() < prob) {
+                                const tone = getTone(user.currentWeek);
+                                const reminder = await geminiService.generateFocusReminder(user.focusArea, user.currentWeek, tone);
+                                const header = user.focusArea ? "🔔 <b>Напоминание фокуса:</b>" : "🔔 <b>Сэнсэй на связи:</b>";
+                                await bot.api.sendMessage(user.telegramId, `${header}\n\n${reminder}`, { parse_mode: 'HTML' });
+                                
+                                user.lastFocusReminderDate = todayStr;
+                                await user.save();
+                            }
                         }
                     }
 
@@ -205,15 +217,24 @@ const setupCronJobs = (bot) => {
                         }
 
                         if (user.isReadyForNextWeek && user.totalRoutineDays >= 1) {
-                            user.currentWeek += 1;
-                            user.currentDay = 1;
-                            user.completedGlobalTasks = [];
-                            user.totalRoutineDays = 0;
-                            user.isReadyForNextWeek = false;
-                            user.weekStartedDate = dt.toFormat('yyyy-MM-dd');
-                            user.strikes = 0;
-                            user.exemptedTasks = [];
-                            await user.save();
+                            if (user.currentWeek === 12) {
+                                user.completedTraining = true;
+                                user.strikes = 0;
+                                await user.save();
+                                const triumphText = `🏆 <b>Сэнсэй:</b>\n\nТы прошел этот Путь. 12 недель дисциплины, боли и перерождения. Твоя воля теперь тверже стали, а разум чист.\n\nБольшинство ломается на первых шагах, но ты дошел до конца. Я горжусь тобой, боец.\n\nТеперь ты сам себе учитель. Но помни: Мастерство не терпит застоя. Вернись на первый уровень и пройди этот курс снова, чтобы закрепить навыки навсегда.`;
+                                const kb = new InlineKeyboard().text('🔄 Пройти Путь заново', `restart_training`);
+                                await bot.api.sendPhoto(user.telegramId, new InputFile('src/assets/triumph_sensei.png'), { caption: triumphText, parse_mode: 'HTML', reply_markup: kb });
+                            } else {
+                                user.currentWeek += 1;
+                                user.currentDay = 1;
+                                user.completedGlobalTasks = [];
+                                user.totalRoutineDays = 0;
+                                user.isReadyForNextWeek = false;
+                                user.weekStartedDate = dt.toFormat('yyyy-MM-dd');
+                                user.strikes = 0;
+                                user.exemptedTasks = [];
+                                await user.save();
+                            }
                         } else {
                             let reasonParts = [];
                             if (hasUndoneRoutine) reasonParts.push("незакрытая рутина");

@@ -346,8 +346,13 @@ const handleProgress = async (ctx) => {
     const doneGlobalTasks = allGlobalTaskIds.filter(id => user.completedGlobalTasks.includes(id)).length;
     const totalGlobalTasks = allGlobalTaskIds.length;
 
-    let text = `<b>📈 ПРОГРЕСС</b>\n\nНеделя: ${user.currentWeek} | День: ${user.currentDay}\n`;
-    text += `Задач на сегодня выполнено: ${doneTasks} из ${totalTasks}\n`;
+    let text = `<b>📈 ПРОГРЕСС</b>\n\n`;
+    if (user.completedTraining) {
+        text += `Статус: <b>🏆 ТРИУМФ (Тренинг завершен)</b>\n`;
+    } else {
+        text += `Неделя: ${user.currentWeek} | День: ${user.currentDay}\n`;
+        text += `Задач на сегодня выполнено: ${doneTasks} из ${totalTasks}\n`;
+    }
     text += `Глобальных задач за неделю: ${doneGlobalTasks} из ${totalGlobalTasks}\n`;
     text += `Отчёт за сегодня: ${hasReportToday ? '✅ Сдан' : '❌ Не сдан'}\n`;
     text += `Страйков за косяки и нытье: ${strikes}/5\n`;
@@ -377,6 +382,17 @@ const handleTasks = async (ctx) => {
     if (!user) return ctx.reply("Сначала нажми /start.");
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) return ctx.reply("Замороженные не получают задач.");
+
+    if (user.completedTraining) {
+        const kb = new InlineKeyboard().text('🔄 Пройти Путь заново', `restart_training`);
+        const msg = "<b>Твое обучение завершено.</b>\nЗаданий больше нет, Мастер.\n\nНо дисциплина требует постоянной практики. Ты можешь начать Путь заново в любой момент.";
+        if (ctx.callbackQuery) {
+            await ctx.editMessageText(msg, { parse_mode: 'HTML', reply_markup: kb });
+            await ctx.answerCallbackQuery();
+            return;
+        }
+        return ctx.reply(msg, { parse_mode: 'HTML', reply_markup: kb });
+    }
 
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     const todayStr = dt.toFormat('yyyy-MM-dd');
@@ -999,6 +1015,38 @@ const handlePhoto = async (ctx) => {
     }
 };
 
+export const handleRestartTraining = async (ctx) => {
+    const user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user || (!user.completedTraining && user.telegramId.toString() !== process.env.CREATOR_ID)) {
+        await ctx.answerCallbackQuery({ text: "Недоступно." });
+        return;
+    }
+
+    user.completedTraining = false;
+    user.currentWeek = 1;
+    user.currentDay = 1;
+    user.completedGlobalTasks = [];
+    user.strikes = 0;
+    user.totalRoutineDays = 0;
+    user.isReadyForNextWeek = false;
+    user.progress = new Map();
+    user.exemptedTasks = [];
+    user.weekStartedDate = DateTime.now().setZone(user.timezone || 'Europe/Kyiv').toFormat('yyyy-MM-dd');
+    
+    await user.save();
+
+    await ctx.answerCallbackQuery({ text: "Тренинг начат заново!" });
+    if (ctx.callbackQuery.message) {
+        try {
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+        } catch (e) {
+            // Игнор ошибок grammy при удалении кнопок
+        }
+    }
+    
+    await ctx.reply(`<b>🔄 Путь начат заново. С возвращением на первую неделю.</b>\n\nНикаких поблажек за былые заслуги. Вспомни с чего ты начинал.`, { parse_mode: 'HTML' });
+};
+
 const handleMyChatMember = async (ctx) => {
     try {
         const newStatus = ctx.myChatMember.new_chat_member.status;
@@ -1020,5 +1068,6 @@ export {
     handleTimezoneCallback, handleTasks, handleTaskDoneCallback,
     handleCustomTaskCallback, handleShowLectureCallback, handleRemindLaterCallback,
     handleText, handleVoice, handlePhoto, handleMyChatMember,
-    handleSubmitReportStartCallback, handleSubmitWeeklyReportCallback
+    handleSubmitReportStartCallback, handleSubmitWeeklyReportCallback,
+    handleRestartTraining
 };
