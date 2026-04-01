@@ -157,7 +157,7 @@ ${globalTasksList}
   } catch (error) {
     console.error("Gemini API Error:", error);
     return {
-      responseText: "Система сбоит. Попробуй ещё раз. [ОШИБКА]",
+      responseText: "Связь с Сэнсэем прервана. Попробуй ещё раз. [ОШИБКА]",
       isDailyReportAccepted: false,
       completedTasks: [],
       hasWhiningPenalty: false,

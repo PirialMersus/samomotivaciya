@@ -3,7 +3,9 @@ import Report from '../models/Report.js';
 import CustomTask from '../models/CustomTask.js';
 import Artifact from '../models/Artifact.js';
 import methodology, { getFullDailyRoutine, getFullTaboo } from '../data/methodology.js';
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
+import fs from 'fs';
+import path from 'path';
 import { DateTime } from 'luxon';
 import * as geminiService from '../services/gemini.js';
 import { getTasksMessage } from '../services/task.service.js';
@@ -29,6 +31,45 @@ const bufferPraise = async (ctx, user, text) => {
         await ctx.api.sendMessage(user.telegramId, `<b>Сэнсэй:</b> ${text}`, { parse_mode: 'HTML' });
     }, 4000);
     praiseBuffers.set(userId, timer);
+};
+
+const getLevelUpMessage = (weekNumber, nextToneLabel) => {
+    const routineReminder = "\n\nНе забудь доделать сегодняшние дела для окончательного перехода на новую неделю. 🦾";
+    const messages = {
+        1: `Первый этап пройден. Ты очистил сознание и пространство. Теперь ты — <b>${nextToneLabel}</b>. Пришло время закрепить волю Контрактом и увидеть свои истинные цели. Технический переход (новые рутины и табу) — сегодня в 00:00.${routineReminder}`,
+        2: `Контракт подписан, цели видимы. Твой статус: <b>${nextToneLabel}</b>. Теперь мы найдем твой неизменный Центр, твою точку опоры во внешнем хаосе. Готовься, переход сегодня в полночь.${routineReminder} 🎯`,
+        3: `Центр найден, ты обрел баланс и осанку. Теперь — время Резонанса. Отдавай энергию миру, и он вернет её сторицей. Твой новый путь как <b>${nextToneLabel}</b> начнется сегодня в 00:00.${routineReminder} 🌊`,
+        4: `Социальный резонанс запущен. Ты учишься управлять вниманием других. Теперь переходим к Глубинному Анализу. Твой статус: <b>${nextToneLabel}</b>. Сегодня в 00:00 — новые вызовы.${routineReminder} 🧠`,
+        5: `Анализ завершен, хвосты подчищены. Ты — <b>${nextToneLabel}</b>. Время отточить Интеллектуальную Выносливость. Мозг должен работать на пике. В полночь — обновление программы.${routineReminder} ⚡️`,
+        6: `Интеллект остер, как бритва. Ты — <b>${nextToneLabel}</b>. Пришло время для Масштабного Видения. Смотри шире, планируй глобальнее. Переход сегодня в 00:00.${routineReminder} 🔭`,
+        7: `Видение сформировано. Твой статус: <b>${nextToneLabel}</b>. Настало время Мастерства Деталей. Тайм-менеджмент и статика духа. Сегодня в 00:00 стартует восьмой цикл.${routineReminder} ⏳`,
+        8: `Мастерство проявляется в мелочах. Ты — <b>${nextToneLabel}</b>. Входим в зону Энергетического Прорыва. Твои запасы сил безграничны. Обновление сегодня в полночь.${routineReminder} 🔥`,
+        9: `Прорыв совершен. Ты — <b>${nextToneLabel}</b>. Время интеграции и Наставничества. Учись, передавая знания. Технический переход сегодня в 00:00.${routineReminder} 🤝`,
+        10: `Наставник внутри тебя пробужден. Ты — <b>${nextToneLabel}</b>. Мы выходим на финишную прямую — этап Трансформации. Сегодня в 00:00 прошивка обновится в предпоследний раз.${routineReminder} 🦋`,
+        11: `Трансформация почти завершена. Ты — <b>${nextToneLabel}</b>. Последний рывок перед Триумфом. Собери всё свое мужество. Сегодня в 00:00 начнется финальная неделя.${routineReminder} 🏆`,
+        12: `Путь завершен. Ты доказал всё себе и Сэнсэю. Сегодня в 00:00 ты станешь Легендой. Наслаждайся последними часами в статусе ученика.${routineReminder} 👑`
+    };
+    return messages[weekNumber] || `Поздравляю! Ты переходишь на новый уровень. Твой следующий статус: <b>${nextToneLabel}</b>. Технический переход — сегодня в 00:00.${routineReminder}`;
+};
+
+const sendLevelUpMessage = async (ctx, weekNumber, nextToneLabel) => {
+    const text = getLevelUpMessage(weekNumber, nextToneLabel);
+    const photoPath = `src/assets/images/level_up_${weekNumber}.png`;
+    const fullPath = path.resolve(photoPath);
+    
+    try {
+        if (fs.existsSync(fullPath)) {
+            await ctx.replyWithPhoto(new InputFile(fullPath), {
+                caption: `<b>LEVEL UP!</b> 🆙\n\n${text}`,
+                parse_mode: 'HTML'
+            });
+        } else {
+            await ctx.reply(`<b>LEVEL UP!</b> 🆙\n\n${text}`, { parse_mode: 'HTML' });
+        }
+    } catch (error) {
+        console.error('Failed to send level up message:', error);
+        await ctx.reply(`<b>LEVEL UP!</b> 🆙\n\n${text}`, { parse_mode: 'HTML' });
+    }
 };
 
 const downloadFileAsBase64 = (fileUrl) => {
@@ -193,7 +234,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
             user.isReadyForNextWeek = true;
             await user.save();
             const nextTone = getTone(user.currentWeek + 1);
-            await ctx.reply(`<b>Сэнсэй:</b> Поздравляю! Все глобальные задачи этой недели приняты. Ты повышен в звании! Твой следующий статус: <b>${nextTone.label}</b>. 🏆\n\nНо не расслабляйся — добей всю рутину на сегодня. Технический переход на новую неделю будет ровно в полночь. 🦾`, { parse_mode: 'HTML' });
+            await sendLevelUpMessage(ctx, user.currentWeek, nextTone.label);
         } else {
             // Если флаг уже стоит, просто сохраняем прогресс по отчету
             await user.save();
@@ -1015,7 +1056,7 @@ const handlePhoto = async (ctx) => {
     }
 };
 
-export const handleRestartTraining = async (ctx) => {
+const handleRestartTraining = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user || (!user.completedTraining && user.telegramId.toString() !== process.env.CREATOR_ID)) {
         await ctx.answerCallbackQuery({ text: "Недоступно." });

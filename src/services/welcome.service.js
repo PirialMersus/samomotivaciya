@@ -1,9 +1,39 @@
 import { getTone } from '../utils/tone.js';
 import { getTasksMessage } from './task.service.js';
+import methodology from '../data/methodology.js';
 import { DateTime } from 'luxon';
 import fs from 'fs';
 import path from 'path';
 import { InputFile } from 'grammy';
+
+const getNewTasksAndTaboosMessage = (weekNumber) => {
+    let newTasks = [];
+    let newTaboos = [];
+    
+    if (methodology[`week${weekNumber}_persistent_routine`]) {
+        newTasks.push(...methodology[`week${weekNumber}_persistent_routine`].map(t => t.title));
+    }
+    if (methodology.weeks[weekNumber]?.daily_routine) {
+        newTasks.push(...methodology.weeks[weekNumber].daily_routine.map(t => t.title));
+    }
+    
+    if (methodology[`week${weekNumber}_persistent_taboo`]) {
+        newTaboos.push(...methodology[`week${weekNumber}_persistent_taboo`].map(t => t.title));
+    }
+    if (methodology.weeks[weekNumber]?.taboo) {
+        newTaboos.push(...methodology.weeks[weekNumber].taboo.map(t => t.title));
+    }
+    
+    let message = "";
+    if (newTasks.length > 0) {
+        message += `\n\n📌 <b>Вам добавились новые повседневные задания:</b>\n— ${newTasks.join('\n— ')}`;
+    }
+    if (newTaboos.length > 0) {
+        message += `\n\n🚫 <b>Вам добавились новые табу:</b>\n— ${newTaboos.join('\n— ')}`;
+    }
+    
+    return message;
+};
 
 export const sendWeekWelcome = async (bot, user, options = {}) => {
     const { includeTasks = false } = options;
@@ -16,6 +46,7 @@ export const sendWeekWelcome = async (bot, user, options = {}) => {
         captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРВОЙ НЕДЕЛЕЙ ТВОЕЙ НОВОЙ ЖИЗНИ!</b> 🌟\n\nТвой путь начинается здесь. Твое звание: <b>${tone.label}</b>. Твоя задача — дисциплина и чистота.`;
     } else {
         captionText = `<b>ПОЗДРАВЛЯЮ С ПЕРЕХОДОМ!</b>\n\nТы перешел на <b>Неделю ${user.currentWeek}</b>. Твое новое звание: <b>${tone.label}</b>. 🏆\n\nВсе твои прошлые заслуги и страйки обнулены, впереди новые испытания.`;
+        captionText += getNewTasksAndTaboosMessage(user.currentWeek);
     }
 
     const sendOptions = { 
