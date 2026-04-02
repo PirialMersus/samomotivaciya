@@ -4,7 +4,9 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import connectDB from './config/db.js';
 import * as botControllers from './controllers/bot.controller.js';
 import setupCronJobs from './services/cron.js';
-import User from './models/User.js'; // Импорт для работы команды /setweek
+import { sendWeekWelcome } from './services/welcome.service.js';
+import User from './models/User.js';
+import { createMainMenuKeyboard } from './keyboards/menus.js';
 
 const startApplication = async () => {
     // 1. Подключение к базе данных
@@ -40,13 +42,16 @@ const startApplication = async () => {
         const week = parseInt(ctx.message.text.split(' ')[1]);
         if (week >= 1 && week <= 12) {
             try {
-                const user = await User.findOneAndUpdate(
+                await User.findOneAndUpdate(
                     { telegramId: ctx.from.id },
                     { currentWeek: week, currentDay: 1, completedGlobalTasks: [], totalRoutineDays: 0, isReadyForNextWeek: false },
                     { new: true }
                 );
+                const user = await User.findOne({ telegramId: ctx.from.id });
                 if (user) {
-                    await ctx.reply(`📊 <b>Режим теста:</b> установлена неделя ${week}\n\nВсе счетчики сброшены. Филипп готов проверять отчеты по новым правилам.`, { parse_mode: 'HTML' });
+                    const keyboard = createMainMenuKeyboard(true);
+                    await ctx.reply(`📊 <b>Режим теста:</b> установлена неделя ${week}\n\nВсе счетчики сброшены. Филипп готов проверять отчеты по новым правилам.`, { parse_mode: 'HTML', reply_markup: keyboard });
+                    await sendWeekWelcome(bot, user, { includeTasks: true });
                 } else {
                     await ctx.reply('Сначала нажми /start, чтобы зарегистрироваться в системе.');
                 }

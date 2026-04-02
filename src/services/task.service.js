@@ -26,7 +26,8 @@ export const getTasksMessage = async (user, todayStr) => {
     const dailyRoutineByWeek = {
         1: [...(methodology.base_daily_routine || [])],
         2: [...(methodology.week2_persistent_routine || [])],
-        3: [...(methodology.week3_persistent_routine || [])]
+        3: [...(methodology.week3_persistent_routine || [])],
+        4: [...(methodology.week4_persistent_routine || [])]
     };
 
     // Добавляем специфические задачи текущей недели в соответствующий блок
@@ -62,7 +63,8 @@ export const getTasksMessage = async (user, todayStr) => {
     // 3. Собираем все Табу по неделям
     const tabooByWeek = {
         1: [...(methodology.base_taboo || [])],
-        2: [...(methodology.week2_persistent_taboo || [])]
+        2: [...(methodology.week2_persistent_taboo || [])],
+        4: [...(methodology.week4_persistent_taboo || [])]
     };
 
     const currentSpecificTaboo = methodology.weeks[user.currentWeek]?.taboo || [];
@@ -99,24 +101,44 @@ export const getTasksMessage = async (user, todayStr) => {
 
     const taskKeyboard = new InlineKeyboard();
     
-    // Кнопки для рутины и табу (все в куче для удобства нажатия, но с понятными названиями)
-    const allCheckable = [
-        ...(methodology.base_daily_routine || []),
-        ...(user.currentWeek >= 2 ? (methodology.week2_persistent_routine || []) : []),
-        ...(user.currentWeek >= 3 ? (methodology.week3_persistent_routine || []) : []),
-        ...(methodology.weeks[user.currentWeek]?.daily_routine || []),
-        ...(methodology.base_taboo || []),
-        ...(user.currentWeek >= 2 ? (methodology.week2_persistent_taboo || []) : []),
-        ...(methodology.weeks[user.currentWeek]?.taboo || [])
-    ];
-
-    allCheckable.forEach(t => {
-        const isDone = user.progress?.get(`${t.id}_${todayStr}`);
-        if (!isDone) {
-            const btnText = t.type === 'taboo' ? `Соблюдал ✅: ${t.title}` : `Сделал ✅: ${t.title}`;
-            taskKeyboard.text(btnText, `done:${t.id}`).row();
+    // Группируем кнопки по неделям
+    for (let w = 1; w <= user.currentWeek; w++) {
+        const weekTasks = [];
+        
+        if (w === 1) {
+            // Базовые рутины и табу — это Неделя 1
+            weekTasks.push(...(methodology.base_daily_routine || []), ...(methodology.base_taboo || []));
+        } else {
+            // Постоянные рутины и табу для конкретной недели
+            const routineKey = `week${w}_persistent_routine`;
+            const tabooKey = `week${w}_persistent_taboo`;
+            if (methodology[routineKey]) weekTasks.push(...methodology[routineKey]);
+            if (methodology[tabooKey]) weekTasks.push(...methodology[tabooKey]);
         }
-    });
+        
+        // Специфические задачи ЭТОЙ недели (если мы на ней сейчас)
+        if (w === user.currentWeek) {
+            const specificRoutine = methodology.weeks[w]?.daily_routine || [];
+            const specificTaboo = methodology.weeks[w]?.taboo || [];
+            weekTasks.push(...specificRoutine, ...specificTaboo);
+        }
+
+        // Оставляем только невыполненные на сегодня задачи этой недели
+        const pending = weekTasks.filter(t => {
+            // Если progress отсутствует или не является Map/объектом с методом get, считаем задачу невыполненной
+            if (!user.progress || typeof user.progress.get !== 'function') return true;
+            return !user.progress.get(`${t.id}_${todayStr}`);
+        });
+
+        if (pending.length > 0) {
+            // Добавляем заголовок недели как некликабельную кнопку (ignore)
+            taskKeyboard.text(`--- НЕДЕЛЯ ${w} ---`, "ignore").row();
+            pending.forEach(t => {
+                const btnText = t.type === 'taboo' ? `Соблюдал ✅: ${t.title}` : `Сделал ✅: ${t.title}`;
+                taskKeyboard.text(btnText, `done:${t.id}`).row();
+            });
+        }
+    }
 
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     

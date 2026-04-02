@@ -29,7 +29,7 @@ const bufferPraise = async (ctx, user, text) => {
     const timer = setTimeout(async () => {
         praiseBuffers.delete(userId);
         await ctx.api.sendMessage(user.telegramId, `<b>Сэнсэй:</b> ${text}`, { parse_mode: 'HTML' });
-    }, 4000);
+    }, 10000);
     praiseBuffers.set(userId, timer);
 };
 
@@ -808,29 +808,37 @@ export const handleText = async (ctx) => {
 
     // Обработка установки недели админом
     if (user.isSettingWeek && isCreator) {
-        const weekNum = parseInt(text);
-        if (!isNaN(weekNum) && weekNum >= 1 && weekNum <= 12) {
-            user.currentWeek = weekNum;
-            user.currentDay = 1;
-            user.completedGlobalTasks = [];
-            user.totalRoutineDays = 0;
-            user.isReadyForNextWeek = false;
-            user.strikes = 0;
-            user.exemptedTasks = [];
+        const isNavButton = ["📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "⚙️ Настройки", "👥 Активные юзеры", "📅 Выставить неделю", "🧪 Тест напоминания", "🔙 Назад"].includes(text);
+        if (isNavButton) {
             user.isSettingWeek = false;
             await user.save();
-
-            await sendWeekWelcome(ctx, user, { includeTasks: true });
         } else {
-            await ctx.reply("❌ Некорректный номер недели. Введи число от 1 до 12.");
+            const weekNum = parseInt(text);
+            if (!isNaN(weekNum) && weekNum >= 1 && weekNum <= 12) {
+                user.currentWeek = weekNum;
+                user.currentDay = 1;
+                user.completedGlobalTasks = [];
+                user.totalRoutineDays = 0;
+                user.isReadyForNextWeek = false;
+                user.strikes = 0;
+                user.exemptedTasks = [];
+                user.isSettingWeek = false;
+                await user.save();
+
+                await ctx.reply(`Неделя успешно установлена на ${weekNum}.`, { reply_markup: createMainMenuKeyboard(true) });
+                await sendWeekWelcome(ctx, user, { includeTasks: true });
+            } else {
+                const kb = createMainMenuKeyboard(true);
+                await ctx.reply("❌ Некорректный номер недели. Введи число от 1 до 12.", { reply_markup: kb });
+            }
+            return;
         }
-        return;
     }
 
     if (text === "📅 Выставить неделю" && isCreator) {
         user.isSettingWeek = true;
         await user.save();
-        await ctx.reply("Введи номер недели (1-12):", { reply_markup: { remove_keyboard: true } });
+        await ctx.reply("Введи номер недели (1-12):", { reply_markup: createMainMenuKeyboard(true) });
         return;
     }
 

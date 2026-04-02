@@ -54,8 +54,8 @@ const methodology = {
     { id: "sincere_gratitude", title: "Практика искренней благодарности", type: "social" }
   ],
   week4_persistent_taboo: [
-    { id: "taboo_stimulants", title: "Без стимуляторов после 16:00", type: "taboo", detail: "Табу на кофеин, танин, таурин и белый сахар после 16:00." },
-    { id: "taboo_info_before_sleep", title: "Инфо-табу перед сном", type: "taboo", detail: "Отказ от гаджетов и негативного контента за 1.5 часа до сна." }
+    { id: "taboo_stimulants", title: "Без стимуляторов после 16:00", type: "taboo", detail: "Запрет на кофеин, танин (чай), таурин, а также белый сахар после 16:00." },
+    { id: "taboo_info_before_sleep", title: "Инфо-табу перед сном", type: "taboo", detail: "Запрет на использование гаджетов и просмотр негативного контента за 1.5 часа до сна." }
   ],
   weeks: {
     1: {
