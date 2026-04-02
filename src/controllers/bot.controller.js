@@ -316,7 +316,7 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
     }
 }
 
-const handleStart = async (ctx) => {
+export const handleStart = async (ctx) => {
     const telegramId = ctx.from.id;
     const username = ctx.from.username || '';
     const isCreator = telegramId.toString() === process.env.CREATOR_ID;
@@ -359,7 +359,7 @@ const handleStart = async (ctx) => {
     }
 };
 
-const handleProgress = async (ctx) => {
+export const handleProgress = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
 
@@ -418,7 +418,7 @@ const handleProgress = async (ctx) => {
     await ctx.reply(text, { parse_mode: 'HTML' });
 };
 
-const handleTasks = async (ctx) => {
+export const handleTasks = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
@@ -456,7 +456,7 @@ const handleTasks = async (ctx) => {
     }
 };
 
-const handleTaskDoneCallback = async (ctx) => {
+export const handleTaskDoneCallback = async (ctx) => {
     const taskId = ctx.match[1];
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
@@ -491,17 +491,17 @@ const handleTaskDoneCallback = async (ctx) => {
     }
 };
 
-const handleSubmitReportStartCallback = async (ctx) => {
+export const handleSubmitReportStartCallback = async (ctx) => {
     await ctx.reply("<b>Отчёт за день.</b>\nПришли мне текстовое или голосовое сообщение с итогами дня. Что сделано? Где просадка? Какое состояние?", { parse_mode: 'HTML' });
     await ctx.answerCallbackQuery();
 };
 
-const handleSubmitWeeklyReportCallback = async (ctx) => {
+export const handleSubmitWeeklyReportCallback = async (ctx) => {
     await ctx.reply("<b>ИТОГ ПУТИ ЗА НЕДЕЛЮ.</b>\nПришли мне развернутый отчет за всю неделю. Какие главные победы? Какие осознания? Ты стал сильнее или просто топтался на месте?", { parse_mode: 'HTML' });
     await ctx.answerCallbackQuery();
 };
 
-const handleCustomTaskCallback = async (ctx) => {
+export const handleCustomTaskCallback = async (ctx) => {
     const [action, taskId] = ctx.match[0].split(':');
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
@@ -593,7 +593,7 @@ export const handleSetDateCallback = async (ctx) => {
     }
 };
 
-const handleShowLectureCallback = async (ctx) => {
+export const handleShowLectureCallback = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
 
@@ -610,7 +610,7 @@ const handleShowLectureCallback = async (ctx) => {
     await ctx.reply(`<b>📚 ПОЯСНЕНИЕ К НЕДЕЛЕ ${user.currentWeek}</b>\n\n${weekData.lecture_notes}`, { parse_mode: 'HTML' });
 };
 
-const handleSettings = async (ctx) => {
+export const handleSettings = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
 
@@ -620,7 +620,7 @@ const handleSettings = async (ctx) => {
     });
 };
 
-const handleSettingsCallback = async (ctx) => {
+export const handleSettingsCallback = async (ctx) => {
     const action = ctx.match[1];
     if (action === 'timezone') {
         await ctx.editMessageText("Выбери свой регион:", {
@@ -643,7 +643,7 @@ const handleSettingsCallback = async (ctx) => {
     await ctx.answerCallbackQuery();
 };
 
-const handleTimezoneCallback = async (ctx) => {
+export const handleTimezoneCallback = async (ctx) => {
     const data = ctx.match[1];
     if (data.startsWith('region:')) {
         const region = data.split(':')[1];
@@ -661,7 +661,7 @@ const handleTimezoneCallback = async (ctx) => {
     await ctx.answerCallbackQuery();
 };
 
-const handleRemindLaterCallback = async (ctx) => {
+export const handleRemindLaterCallback = async (ctx) => {
     await ctx.answerCallbackQuery({ text: "Напомню позже!" });
 };
 
@@ -768,7 +768,7 @@ const sendToGeminiAndRespond = async (ctx, user, contentParts, originalText, opt
     await processGeminiResult(ctx, user, geminiResult, originalText, options);
 };
 
-const handleText = async (ctx) => {
+export const handleText = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Жми /start.");
 
@@ -949,7 +949,7 @@ const handleText = async (ctx) => {
     await bufferContent(ctx, user, text, text);
 };
 
-const handleVoice = async (ctx) => {
+export const handleVoice = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Жми /start.");
 
@@ -1000,7 +1000,7 @@ const handleVoice = async (ctx) => {
     }
 };
 
-const handlePhoto = async (ctx) => {
+export const handlePhoto = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Жми /start.");
 
@@ -1056,7 +1056,7 @@ const handlePhoto = async (ctx) => {
     }
 };
 
-const handleRestartTraining = async (ctx) => {
+export const handleRestartTraining = async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user || (!user.completedTraining && user.telegramId.toString() !== process.env.CREATOR_ID)) {
         await ctx.answerCallbackQuery({ text: "Недоступно." });
@@ -1088,7 +1088,7 @@ const handleRestartTraining = async (ctx) => {
     await ctx.reply(`<b>🔄 Путь начат заново. С возвращением на первую неделю.</b>\n\nНикаких поблажек за былые заслуги. Вспомни с чего ты начинал.`, { parse_mode: 'HTML' });
 };
 
-const handleMyChatMember = async (ctx) => {
+export const handleMyChatMember = async (ctx) => {
     try {
         const newStatus = ctx.myChatMember.new_chat_member.status;
         if (newStatus === 'kicked') {
@@ -1102,13 +1102,4 @@ const handleMyChatMember = async (ctx) => {
     } catch (error) {
         console.error(error);
     }
-};
-
-export {
-    handleStart, handleProgress, handleSettings, handleSettingsCallback,
-    handleTimezoneCallback, handleTasks, handleTaskDoneCallback,
-    handleCustomTaskCallback, handleShowLectureCallback, handleRemindLaterCallback,
-    handleText, handleVoice, handlePhoto, handleMyChatMember,
-    handleSubmitReportStartCallback, handleSubmitWeeklyReportCallback,
-    handleRestartTraining
 };
