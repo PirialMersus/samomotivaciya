@@ -113,6 +113,11 @@ const startApplication = async () => {
             return;
         }
 
+        // Подавляем ошибку протухших callback_query, чтобы не спамить в консоль при перезапусках
+        if (e instanceof GrammyError && e.description.includes('query is too old')) {
+            return;
+        }
+
         console.error(`Error while handling update ${ctx?.update?.update_id}:`);
         if (e instanceof GrammyError) {
             console.error("Error in request:", e.description);
