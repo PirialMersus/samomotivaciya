@@ -370,8 +370,8 @@ export const handleStart = async (ctx) => {
     }
 };
 
-export const handleProgress = async (ctx) => {
-    const user = await User.findOne({ telegramId: ctx.from.id });
+export const handleProgress = async (ctx, existingUser = null) => {
+    const user = existingUser || await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
 
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
@@ -429,8 +429,8 @@ export const handleProgress = async (ctx) => {
     await ctx.reply(text, { parse_mode: 'HTML' });
 };
 
-export const handleTasks = async (ctx) => {
-    const user = await User.findOne({ telegramId: ctx.from.id });
+export const handleTasks = async (ctx, existingUser = null) => {
+    const user = existingUser || await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) return ctx.reply("Замороженные не получают задач.");
@@ -494,7 +494,7 @@ export const handleTaskDoneCallback = async (ctx) => {
     } else {
         await bufferPraise(ctx, user, tone.praise);
         try {
-            await handleTasks(ctx);
+            await handleTasks(ctx, user);
         } catch (e) {
             if (e.description?.includes("message is not modified")) return;
             console.error(e);
@@ -531,7 +531,7 @@ export const handleCustomTaskCallback = async (ctx) => {
     }
 
     try {
-        await handleTasks(ctx);
+        await handleTasks(ctx, user);
     } catch (e) {
         if (!e.description?.includes("message is not modified")) console.error(e);
     }
@@ -600,12 +600,12 @@ export const handleSetDateCallback = async (ctx) => {
     // Показываем обновленный список если дата совпадает с сегодня
     const dt = DateTime.now().setZone(user.timezone || 'Europe/Kyiv');
     if (dateStr === dt.toFormat('yyyy-MM-dd')) {
-        await handleTasks(ctx);
+        await handleTasks(ctx, user);
     }
 };
 
-export const handleShowLectureCallback = async (ctx) => {
-    const user = await User.findOne({ telegramId: ctx.from.id });
+export const handleShowLectureCallback = async (ctx, existingUser = null) => {
+    const user = existingUser || await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
 
     const weekData = methodology.weeks[user.currentWeek];
@@ -621,8 +621,8 @@ export const handleShowLectureCallback = async (ctx) => {
     await ctx.reply(`<b>📚 ПОЯСНЕНИЕ К НЕДЕЛЕ ${user.currentWeek}</b>\n\n${weekData.lecture_notes}`, { parse_mode: 'HTML' });
 };
 
-export const handleSettings = async (ctx) => {
-    const user = await User.findOne({ telegramId: ctx.from.id });
+export const handleSettings = async (ctx, existingUser = null) => {
+    const user = existingUser || await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
 
     await ctx.reply(`Текущий часовой пояс: <b>${user.timezone}</b>\n\nВыбери изменение:`, {
@@ -784,7 +784,7 @@ export const handleText = async (ctx) => {
     if (!user) return ctx.reply("Жми /start.");
 
     user.lastActivityAt = new Date();
-    await user.save();
+    User.updateOne({ _id: user._id }, { $set: { lastActivityAt: user.lastActivityAt } }).catch(() => {});
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
@@ -871,9 +871,9 @@ export const handleText = async (ctx) => {
         await user.save();
     }
 
-    if (text === "⚙️ Настройки") return handleSettings(ctx);
-    if (text === "📚 Задания") return handleTasks(ctx);
-    if (text === "📈 Прогресс") return handleProgress(ctx);
+    if (text === "⚙️ Настройки") return handleSettings(ctx, user);
+    if (text === "📚 Задания") return handleTasks(ctx, user);
+    if (text === "📈 Прогресс") return handleProgress(ctx, user);
     if (text === "👥 Активные юзеры" && isCreator) {
         const stats = await User.aggregate([
             { $match: { frozen: false } },
@@ -922,7 +922,7 @@ export const handleText = async (ctx) => {
         });
     }
 
-    if (text === "📚 Пояснение заданий") return handleShowLectureCallback(ctx);
+    if (text === "📚 Пояснение заданий") return handleShowLectureCallback(ctx, user);
 
     if (text === "📜 Правила игры") {
         const rulesText = `<b>📜 ПРАВИЛА ИГРЫ:</b>\n\n1. <b>Задания:</b> Жми «📚 Задания» внизу. Там твой план на неделю: ежедневная рутина и глобальные цели. Рутину отмечай прямо там кнопками со статусами.\n2. <b>Отчеты:</b> Каждый вечер присылай мне <b>отчет</b> (текстом или голосовым). Расскажи, что сделал за день по рутине и какие глобальные задачи закрыл. Я оценю твой прогресс.\n3. <b>Переход на новую неделю:</b> Чтобы перейти, нужно закрыть <b>все</b> глобальные задачи и <b>хотя бы 1 день</b> выполнить рутину на 100%.\n4. <b>Наказания:</b> За игнор отчетов, невыполнение или нытье — даю страйки. 5 страйков — заморозка бота на 24 часа.\n\n<i>Остались вопросы? Просто напиши мне сообщение текстом/голосом, либо напиши админу (@pirial_mersus), он всё разъяснит.</i>`;
@@ -973,7 +973,7 @@ export const handleVoice = async (ctx) => {
     if (!user) return ctx.reply("Жми /start.");
 
     user.lastActivityAt = new Date();
-    await user.save();
+    User.updateOne({ _id: user._id }, { $set: { lastActivityAt: user.lastActivityAt } }).catch(() => {});
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
@@ -1024,7 +1024,7 @@ export const handlePhoto = async (ctx) => {
     if (!user) return ctx.reply("Жми /start.");
 
     user.lastActivityAt = new Date();
-    await user.save();
+    User.updateOne({ _id: user._id }, { $set: { lastActivityAt: user.lastActivityAt } }).catch(() => {});
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
