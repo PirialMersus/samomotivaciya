@@ -259,6 +259,14 @@ const setupCronJobs = (bot) => {
                                 } else {
                                     const tone = getTone(user.currentWeek);
                                     await bot.api.sendMessage(user.telegramId, `${tone.strike} Причина: ${reasonParts.join(' и ')}. У тебя ${user.strikes}/5 страйков.`, { parse_mode: 'HTML' });
+                                    
+                                    if (user.contractFileId) {
+                                        try {
+                                            await bot.api.sendPhoto(user.telegramId, user.contractFileId, { parse_mode: 'HTML', caption: "<b>Вспомни, ради чего ты здесь.</b>\nТвое обязательство." });
+                                        } catch (e) {
+                                            console.error("Failed to send contract photo via cron:", e.message);
+                                        }
+                                    }
                                 }
                             }
                             await user.save();

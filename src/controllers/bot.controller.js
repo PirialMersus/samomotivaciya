@@ -142,6 +142,13 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
         });
     }
 
+    if (geminiResult.failedTasks && geminiResult.failedTasks.length > 0) {
+        user.progress = user.progress || new Map();
+        geminiResult.failedTasks.forEach(taskId => {
+            user.progress.set(`${taskId}_${todayStr}`, false);
+        });
+    }
+
     if (geminiResult.extractedArtifacts) {
         const art = geminiResult.extractedArtifacts;
         const types = [
@@ -274,6 +281,10 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
             if (user.contractFileId) {
                 await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вот твое обязательство.</b> Ты должен дойти до конца. 🦾", parse_mode: 'HTML' });
             }
+        }
+    } else if (geminiResult.failedTasks && geminiResult.failedTasks.length > 0) {
+        if (user.contractFileId) {
+            await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вспомни, ради чего ты здесь.</b>\nТы сам подписался под этим. Никаких поблажек.", parse_mode: 'HTML' });
         }
     }
 

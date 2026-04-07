@@ -127,7 +127,8 @@ export const getTasksMessage = async (user, todayStr) => {
         const pending = weekTasks.filter(t => {
             // Если progress отсутствует или не является Map/объектом с методом get, считаем задачу невыполненной
             if (!user.progress || typeof user.progress.get !== 'function') return true;
-            return !user.progress.get(`${t.id}_${todayStr}`);
+            const state = user.progress.get(`${t.id}_${todayStr}`);
+            return state === undefined || state === null;
         });
 
         if (pending.length > 0) {

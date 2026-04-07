@@ -90,6 +90,7 @@ ${globalTasksList}
   "response_text": "Твой текстовый ответ",
   "is_daily_report_accepted": true/false (ВАЖНО: Устанавливай в true ТОЛЬКО если пользователь ОСОЗНАННО СДАЕТ ИТОГОВЫЙ ЕЖЕДНЕВНЫЙ ОТЧЕТ ЗА ДЕНЬ. Если он просто скинул выполненную глобальную задачу, скриншот, эссе или задал вопрос без общих итогов дня — СТРОГО УСТАНАВЛИВАЙ false),
   "completed_tasks": ["task_id"],
+  "failed_tasks": ["task_id"] (ВАЖНО: Если подопечный признается, что не выполнил какую-то задачу (рутину или табу), добавь её ID сюда, чтобы лишить его возможности отметить её позже),
   "exemptions": [{"task_id": "id_задачи", "reason": "причина", "alternative": "альтернатива"}],
   "requested_action": "send_contract" | "send_desires" | "send_smart_goals" | "send_strategy" | "send_tactics" | "send_analysis" | "send_weekly_reports" | null,
   "is_contract_photo": true/false,
@@ -136,6 +137,7 @@ ${globalTasksList}
 
     const isDailyReportAccepted = parsed.is_daily_report_accepted === true || parsed.is_report_accepted === true;
     const completedTasks = Array.isArray(parsed.completed_tasks) ? parsed.completed_tasks : [];
+    const failedTasks = Array.isArray(parsed.failed_tasks) ? parsed.failed_tasks : [];
     const artifacts = parsed.extracted_artifacts || {};
     const exemptions = Array.isArray(parsed.exemptions) ? parsed.exemptions : [];
 
@@ -152,7 +154,8 @@ ${globalTasksList}
       isContractPhoto: parsed.is_contract_photo || false,
       extractedArtifacts: artifacts,
       requestedAction: parsed.requested_action || null,
-      exemptions
+      exemptions,
+      failedTasks
     };
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -161,7 +164,8 @@ ${globalTasksList}
       isDailyReportAccepted: false,
       completedTasks: [],
       hasWhiningPenalty: false,
-      exemptions: []
+      exemptions: [],
+      failedTasks: []
     };
   }
 };
