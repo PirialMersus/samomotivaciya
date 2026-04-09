@@ -17,6 +17,7 @@ import { sendWeekWelcome } from '../services/welcome.service.js';
 import { sendLongMessage } from '../utils/telegram.js';
 import https from 'https';
 import http from 'http';
+import { getUptimeString } from '../utils/uptime.js';
 
 const messageBuffers = new Map();
 const praiseBuffers = new Map();
@@ -907,7 +908,8 @@ export const handleText = async (ctx) => {
         ]);
 
         const totalActive = stats.reduce((acc, s) => acc + s.count, 0);
-        let statsMsg = `<b>[АДМИН-ПАНЕЛЬ]</b>\n\nВсего активных: <b>${totalActive}</b>\n\n`;
+        const uptime = getUptimeString(user.timezone);
+        let statsMsg = `<b>[АДМИН-ПАНЕЛЬ]</b>\n\n${uptime}\n\nВсего активных: <b>${totalActive}</b>\n\n`;
 
         if (stats.length > 0) {
             stats.forEach(s => {

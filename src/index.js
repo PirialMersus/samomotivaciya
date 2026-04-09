@@ -1,5 +1,6 @@
 import express from 'express';
 import 'dotenv/config';
+import './utils/uptime.js';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import connectDB from './config/db.js';
 import * as botControllers from './controllers/bot.controller.js';
