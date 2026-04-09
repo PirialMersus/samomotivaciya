@@ -254,7 +254,15 @@ const setupCronJobs = (bot) => {
                                         await bot.api.sendMessage(user.telegramId, "<b>[АДМИН-СТАТУС]</b> Ты набрал 5 страйков, но как создатель системы ты выше блокировок. Страйки обнулены. Но Сэнсэй всё равно недоволен.", { parse_mode: 'HTML' });
                                     } else {
                                         user.frozen = true;
-                                        await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 5 страйков. Ты заморожен. Иди и думай.", { parse_mode: 'HTML' });
+                                        user.unfreezeDate = DateTime.now().setZone(user.timezone || 'Europe/Kyiv').plus({ days: 1 }).toJSDate();
+                                        await bot.api.sendMessage(user.telegramId, "<b>ФИНИШ.</b> Ты набрал 5 страйков. Ты заморожен на 24 часа. Иди и думай.", { parse_mode: 'HTML' });
+                                        if (user.contractFileId) {
+                                            try {
+                                                await bot.api.sendPhoto(user.telegramId, user.contractFileId, { parse_mode: 'HTML', caption: "<b>Помни о важности своего слова.</b>\nТвое обязательство." });
+                                            } catch (e) {
+                                                console.error("Failed to send contract photo via cron (ban):", e.message);
+                                            }
+                                        }
                                     }
                                 } else {
                                     const tone = getTone(user.currentWeek);
@@ -262,7 +270,7 @@ const setupCronJobs = (bot) => {
                                     
                                     if (user.contractFileId) {
                                         try {
-                                            await bot.api.sendPhoto(user.telegramId, user.contractFileId, { parse_mode: 'HTML', caption: "<b>Вспомни, ради чего ты здесь.</b>\nТвое обязательство." });
+                                            await bot.api.sendPhoto(user.telegramId, user.contractFileId, { parse_mode: 'HTML', caption: "<b>Помни о важности своего слова.</b>\nТвое обязательство." });
                                         } catch (e) {
                                             console.error("Failed to send contract photo via cron:", e.message);
                                         }

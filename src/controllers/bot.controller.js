@@ -108,6 +108,45 @@ const buildRoutineStatusText = (user, weekData, todayStr, weekNumber) => {
     return statusText;
 };
 
+const tryUnfreezeAndWelcomeBack = async (ctx, user) => {
+    const isCreatorCheck = user.telegramId.toString() === process.env.CREATOR_ID;
+    if (!user.frozen || isCreatorCheck) return 'not_frozen';
+
+    const now = DateTime.now().toJSDate();
+    if (user.unfreezeDate && now >= user.unfreezeDate) {
+        user.frozen = false;
+        user.strikes = 0;
+        user.unfreezeDate = null;
+        await user.save();
+
+        const tone = getTone(user.currentWeek);
+        const weekImagePath = path.resolve(`src/assets/images/week_${user.currentWeek}.png`);
+
+        const welcomeBackText = `\u{1F513} <b>Сэнсэй снял заморозку.</b>\n\nТы вернулся. И это главное.\n\nНастоящая сила — не в безупречности. Настоящая сила — в том, чтобы упасть и подняться. Ты поднялся. Значит, ты сильнее, чем вчера.\n\nТвой путь продолжается.\nНеделя ${user.currentWeek} | Звание: <b>${tone.label}</b>\nСтрайки обнулены. Чистый лист.\n\n<i>Падать — нормально. Оставаться внизу — нет. Вперёд.</i>`;
+
+        const mainKeyboard = createMainMenuKeyboard(false);
+
+        if (fs.existsSync(weekImagePath)) {
+            await ctx.replyWithPhoto(new InputFile(weekImagePath), {
+                caption: welcomeBackText,
+                parse_mode: 'HTML'
+            });
+        } else {
+            await ctx.reply(welcomeBackText, { parse_mode: 'HTML' });
+        }
+
+        await ctx.reply("Соберись. Жми кнопки и продолжай работу. \u{1F447}", { reply_markup: mainKeyboard });
+
+        return 'unfrozen';
+    }
+
+    const unfreezeStr = user.unfreezeDate
+        ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM')
+        : "неизвестно";
+    await ctx.reply(`Ты заморожен. Доступ будет восстановлен: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
+    return 'still_frozen';
+};
+
 const processGeminiResult = async (ctx, user, geminiResult, originalText, options = {}) => {
     if (geminiResult.isContractPhoto && options.photoId) {
         user.contractFileId = options.photoId;
@@ -272,19 +311,19 @@ const processGeminiResult = async (ctx, user, geminiResult, originalText, option
             await user.save();
             await ctx.reply(`<b>ФИНИШ. Ты заморожен на 24 часа за нытье.</b>`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
-                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вот твое обязательство.</b> Ты должен дойти до конца. 🦾", parse_mode: 'HTML' });
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Помни о важности своего слова.</b>\nТвое обязательство.", parse_mode: 'HTML' });
             }
         } else {
             const tone = getTone(user.currentWeek);
             await user.save();
             await ctx.reply(`<b>СТРАЙК ЗА НЫТЬЕ!</b> ${tone.strike} У тебя ${user.strikes}/5.`, { parse_mode: 'HTML' });
             if (user.contractFileId) {
-                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вот твое обязательство.</b> Ты должен дойти до конца. 🦾", parse_mode: 'HTML' });
+                await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Помни о важности своего слова.</b>\nТвое обязательство.", parse_mode: 'HTML' });
             }
         }
     } else if (geminiResult.failedTasks && geminiResult.failedTasks.length > 0) {
         if (user.contractFileId) {
-            await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Вспомни, ради чего ты здесь.</b>\nТы сам подписался под этим. Никаких поблажек.", parse_mode: 'HTML' });
+            await ctx.replyWithPhoto(user.contractFileId, { caption: "<b>Помни о важности своего слова.</b>\nТвое обязательство.", parse_mode: 'HTML' });
         }
     }
 
@@ -336,15 +375,8 @@ export const handleStart = async (ctx) => {
     let user = await User.findOne({ telegramId });
 
     if (user && user.frozen) {
-        const now = DateTime.now().toJSDate();
-        if (user.unfreezeDate && now >= user.unfreezeDate) {
-            user.frozen = false;
-            user.strikes = 0;
-            user.unfreezeDate = null;
-            await user.save();
-            await ctx.reply("<b>Сэнсэй:</b> Твое наказание окончено. Я разморозил твой доступ. Не заставляй меня делать это снова. Соберись и работай.", { parse_mode: 'HTML', reply_markup: keyboard });
-            return;
-        }
+        const unfreezeResult = await tryUnfreezeAndWelcomeBack(ctx, user);
+        if (unfreezeResult === 'unfrozen' || unfreezeResult === 'still_frozen') return;
     }
 
     if (!user) {
@@ -362,9 +394,6 @@ export const handleStart = async (ctx) => {
         user.isSettingFocusArea = true;
         await user.save();
         await ctx.reply("Прежде чем мы начнем, скажи: <b>над чем ты хочешь поработать больше всего?</b>\n\nЭто может быть глобальная сфера (Деньги, Отношения, Здоровье) или конкретная задача на ближайшее время (Научиться водить, Выучить язык).\n\nЯ буду присылать тебе персональные напоминания от Сэнсэя, чтобы ты всегда держал это в фокусе.", { parse_mode: 'HTML' });
-    } else if (user.frozen && !isCreator) {
-        const unfreezeStr = user.unfreezeDate ? DateTime.fromJSDate(user.unfreezeDate).setZone(user.timezone || 'Europe/Kyiv').toFormat('HH:mm dd.MM') : "неизвестно";
-        await ctx.reply(`Ты заморожен за невыполнение требований или нытье. Твой доступ будет восстановлен автоматически: <b>${unfreezeStr}</b>. До этого момента — молчи и думай.`, { parse_mode: 'HTML' });
     } else {
         await ctx.reply(`Чего прохлаждаешься? У тебя идет Неделя ${user.currentWeek}. Жми кнопки ниже.`, { reply_markup: keyboard });
     }
@@ -433,7 +462,10 @@ export const handleTasks = async (ctx, existingUser = null) => {
     const user = existingUser || await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply("Сначала нажми /start.");
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
-    if (user.frozen && !isCreator) return ctx.reply("Замороженные не получают задач.");
+    if (user.frozen && !isCreator) {
+        const unfreezeResult = await tryUnfreezeAndWelcomeBack(ctx, user);
+        if (unfreezeResult !== 'not_frozen') return;
+    }
 
     if (user.completedTraining) {
         const kb = new InlineKeyboard().text('🔄 Пройти Путь заново', `restart_training`);
@@ -788,15 +820,8 @@ export const handleText = async (ctx) => {
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
-        const now = DateTime.now().toJSDate();
-        if (user.unfreezeDate && now >= user.unfreezeDate) {
-            user.frozen = false;
-            user.strikes = 0;
-            user.unfreezeDate = null;
-            await user.save();
-        } else {
-            return ctx.reply("Замороженные права голоса не имеют.");
-        }
+        const unfreezeResult = await tryUnfreezeAndWelcomeBack(ctx, user);
+        if (unfreezeResult !== 'not_frozen') return;
     }
 
     const text = ctx.message.text;
@@ -977,15 +1002,8 @@ export const handleVoice = async (ctx) => {
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
-        const now = DateTime.now().toJSDate();
-        if (user.unfreezeDate && now >= user.unfreezeDate) {
-            user.frozen = false;
-            user.strikes = 0;
-            user.unfreezeDate = null;
-            await user.save();
-        } else {
-            return ctx.reply("Замороженные права голоса не имеют.");
-        }
+        const unfreezeResult = await tryUnfreezeAndWelcomeBack(ctx, user);
+        if (unfreezeResult !== 'not_frozen') return;
     }
 
     if (user.isMessagingAdmin) {
@@ -1028,15 +1046,8 @@ export const handlePhoto = async (ctx) => {
 
     const isCreator = user.telegramId.toString() === process.env.CREATOR_ID;
     if (user.frozen && !isCreator) {
-        const now = DateTime.now().toJSDate();
-        if (user.unfreezeDate && now >= user.unfreezeDate) {
-            user.frozen = false;
-            user.strikes = 0;
-            user.unfreezeDate = null;
-            await user.save();
-        } else {
-            return ctx.reply("Замороженные права голоса не имеют.");
-        }
+        const unfreezeResult = await tryUnfreezeAndWelcomeBack(ctx, user);
+        if (unfreezeResult !== 'not_frozen') return;
     }
 
     if (user.isMessagingAdmin) {
