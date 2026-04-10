@@ -144,6 +144,13 @@ const startApplication = async () => {
     // 6. Запуск бота
     console.log("Bot mentor is starting polling...");
     bot.start();
+
+    // 7. Уведомление админа о перезапуске (редеплое)
+    const ADMIN_ID = process.env.CREATOR_ID;
+    if (ADMIN_ID) {
+        bot.api.sendMessage(ADMIN_ID, "🚀 <b>Сэнсэй пересобран и запущен на Render.</b> Протоколы синхронизированы.", { parse_mode: 'HTML' })
+            .catch(err => console.error('Failed to send startup notification to admin:', err));
+    }
 };
 
 startApplication();
