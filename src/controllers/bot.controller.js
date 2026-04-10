@@ -114,7 +114,7 @@ const tryUnfreezeAndWelcomeBack = async (ctx, user) => {
     if (!user.frozen || isCreatorCheck) return 'not_frozen';
 
     const now = DateTime.now().toJSDate();
-    if (user.unfreezeDate && now >= user.unfreezeDate) {
+    if (!user.unfreezeDate || now >= user.unfreezeDate) {
         user.frozen = false;
         user.strikes = 0;
         user.unfreezeDate = null;
