@@ -53,7 +53,7 @@ const getLevelUpMessage = (weekNumber, nextToneLabel) => {
     return messages[weekNumber] || `Поздравляю! Ты переходишь на новый уровень. Твой следующий статус: <b>${nextToneLabel}</b>. Технический переход — сегодня в 00:00.${routineReminder}`;
 };
 
-const sendLevelUpMessage = async (ctx, weekNumber, nextToneLabel) => {
+export const sendLevelUpMessage = async (ctx, weekNumber, nextToneLabel) => {
     const text = getLevelUpMessage(weekNumber, nextToneLabel);
     const photoPath = `src/assets/images/level_up_${weekNumber}.png`;
     const fullPath = path.resolve(photoPath);
@@ -863,6 +863,13 @@ export const handleText = async (ctx) => {
                 await user.save();
 
                 await ctx.reply(`Неделя успешно установлена на ${weekNum}.`, { reply_markup: createMainMenuKeyboard(true) });
+                
+                if (weekNum > 1) {
+                    const prevWeek = weekNum - 1;
+                    const tone = getTone(weekNum);
+                    await sendLevelUpMessage(ctx, prevWeek, tone.label);
+                }
+                
                 await sendWeekWelcome(ctx, user, { includeTasks: true });
             } else {
                 const kb = createMainMenuKeyboard(true);

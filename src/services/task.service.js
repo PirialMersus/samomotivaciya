@@ -27,7 +27,8 @@ export const getTasksMessage = async (user, todayStr) => {
         1: [...(methodology.base_daily_routine || [])],
         2: [...(methodology.week2_persistent_routine || [])],
         3: [...(methodology.week3_persistent_routine || [])],
-        4: [...(methodology.week4_persistent_routine || [])]
+        4: [...(methodology.week4_persistent_routine || [])],
+        5: [...(methodology.week5_persistent_routine || [])]
     };
 
     // Добавляем специфические задачи текущей недели в соответствующий блок
