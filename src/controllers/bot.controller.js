@@ -10,7 +10,7 @@ import { DateTime } from 'luxon';
 import * as geminiService from '../services/gemini.js';
 import { getTasksMessage } from '../services/task.service.js';
 import { getTone } from '../utils/tone.js';
-import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard } from '../keyboards/settings.js';
+import { createSettingsKeyboard, createTimezoneRegionsKeyboard, createTimezoneCitiesKeyboard, createFocusSettingsKeyboard } from '../keyboards/settings.js';
 import { createMainMenuKeyboard, createHelpMenuKeyboard } from '../keyboards/menus.js';
 import { createCalendarKeyboard } from '../keyboards/calendar.js';
 import { sendWeekWelcome } from '../services/welcome.service.js';
@@ -396,6 +396,18 @@ export const handleStart = async (ctx) => {
         await user.save();
         await ctx.reply("Прежде чем мы начнем, скажи: <b>над чем ты хочешь поработать больше всего?</b>\n\nЭто может быть глобальная сфера (Деньги, Отношения, Здоровье) или конкретная задача на ближайшее время (Научиться водить, Выучить язык).\n\nЯ буду присылать тебе персональные напоминания от Сэнсэя, чтобы ты всегда держал это в фокусе.", { parse_mode: 'HTML' });
     } else {
+        let needsSave = false;
+        if (user.isCheckingUserInfo) {
+            user.isCheckingUserInfo = false;
+            needsSave = true;
+        }
+        if (user.isSettingWeek) {
+            user.isSettingWeek = false;
+            needsSave = true;
+        }
+        if (needsSave) {
+            await user.save();
+        }
         await ctx.reply(`Чего прохлаждаешься? У тебя идет Неделя ${user.currentWeek}. Жми кнопки ниже.`, { reply_markup: keyboard });
     }
 };
@@ -672,6 +684,8 @@ export const handleSettingsCallback = async (ctx) => {
         });
     } else if (action === 'back') {
         const user = await User.findOne({ telegramId: ctx.from.id });
+        user.isSettingFocusArea = false;
+        await user.save();
         await ctx.editMessageText(`Текущий часовой пояс: <b>${user.timezone}</b>\n\nВыбери изменение:`, {
             parse_mode: 'HTML',
             reply_markup: createSettingsKeyboard()
@@ -679,6 +693,18 @@ export const handleSettingsCallback = async (ctx) => {
     } else if (action === 'close') {
         await ctx.deleteMessage();
     } else if (action === 'focus') {
+        const user = await User.findOne({ telegramId: ctx.from.id });
+        if (user.focusArea) {
+            await ctx.editMessageText(`🎯 <b>Твой текущий фокус внимания:</b>\n\n«${user.focusArea}»\n\nСэнсэй ежедневно присылает тебе персональные советы и направляет фокус на эту цель.`, {
+                parse_mode: 'HTML',
+                reply_markup: createFocusSettingsKeyboard()
+            });
+        } else {
+            user.isSettingFocusArea = true;
+            await user.save();
+            await ctx.editMessageText(`⚡️ <b>Твой фокус внимания — это твоя суперсила.</b>\n\nСэнсэй будет раз в день присылать тебе персональный совет или вопрос, основанный на твоей текущей цели, чтобы ты не „засыпал“ в рутине.\n\n<b>Над чем ты работаешь сейчас?</b>\nЭто может быть:\n— Сфера (Деньги, Отношения, Тело, Осознанность)\n— Конкретное дело (Выучить 100 слов, Сдать проект, Научиться водить)\n\nНапиши ответ одним сообщением, и Сэнсэй включит это в твой протокол.`, { parse_mode: 'HTML' });
+        }
+    } else if (action === 'change_focus') {
         const user = await User.findOne({ telegramId: ctx.from.id });
         user.isSettingFocusArea = true;
         await user.save();
@@ -845,7 +871,7 @@ export const handleText = async (ctx) => {
 
     // Обработка установки недели админом
     if (user.isSettingWeek && isCreator) {
-        const isNavButton = ["📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "⚙️ Настройки", "👥 Активные юзеры", "📅 Выставить неделю", "🧪 Тест напоминания", "🔙 Назад"].includes(text);
+        const isNavButton = ["📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "⚙️ Настройки", "👥 Активные юзеры", "🔍 Инфо о юзере", "📅 Выставить неделю", "🧪 Тест напоминания", "🔙 Назад"].includes(text);
         if (isNavButton) {
             user.isSettingWeek = false;
             await user.save();
@@ -877,6 +903,49 @@ export const handleText = async (ctx) => {
             }
             return;
         }
+    }
+
+    // Обработка запроса инфо о юзере админом
+    if (user.isCheckingUserInfo && isCreator) {
+        const isNavButton = ["📚 Задания", "📈 Прогресс", "ℹ️ Помощь и Правила", "⚙️ Настройки", "👥 Активные юзеры", "🔍 Инфо о юзере", "📅 Выставить неделю", "🧪 Тест напоминания", "🔙 Назад"].includes(text);
+        if (isNavButton) {
+            user.isCheckingUserInfo = false;
+            await user.save();
+        } else {
+            user.isCheckingUserInfo = false;
+            await user.save();
+
+            let query = {};
+            const parsedId = parseInt(text);
+            if (!isNaN(parsedId)) {
+                query = { telegramId: parsedId };
+            } else {
+                const cleanUsername = text.replace('@', '').trim();
+                query = { username: new RegExp('^' + cleanUsername + '$', 'i') };
+            }
+
+            try {
+                const foundUser = await User.findOne(query);
+                if (!foundUser) {
+                    await ctx.reply(`Пользователь "${text}" не найден в базе данных.`, { reply_markup: createMainMenuKeyboard(true) });
+                    return;
+                }
+
+                const infoMsg = formatUserCard(foundUser);
+                await ctx.reply(infoMsg, { parse_mode: 'HTML', reply_markup: createMainMenuKeyboard(true) });
+            } catch (err) {
+                console.error('Info query error:', err);
+                await ctx.reply('Произошла ошибка при поиске пользователя.', { reply_markup: createMainMenuKeyboard(true) });
+            }
+            return;
+        }
+    }
+
+    if (text === "🔍 Инфо о юзере" && isCreator) {
+        user.isCheckingUserInfo = true;
+        await user.save();
+        await ctx.reply("Введи Telegram ID или Username (без @) подопечного:", { reply_markup: createMainMenuKeyboard(true) });
+        return;
     }
 
     if (text === "📅 Выставить неделю" && isCreator) {
@@ -1141,4 +1210,87 @@ export const handleMyChatMember = async (ctx) => {
     } catch (error) {
         console.error(error);
     }
+};
+
+export const formatUserCard = (foundUser) => {
+    const dt = DateTime.now().setZone(foundUser.timezone || 'Europe/Kyiv');
+    const todayStr = dt.toFormat('yyyy-MM-dd');
+
+    const getTaskTitle = (taskId) => {
+        let t = methodology.base_daily_routine.find(x => x.id === taskId);
+        if (t) return t.title;
+
+        t = methodology.base_taboo.find(x => x.id === taskId);
+        if (t) return `🚫 Табу: ${t.title}`;
+
+        const lists = [
+            methodology.week2_persistent_routine,
+            methodology.week2_persistent_taboo,
+            methodology.week3_persistent_routine,
+            methodology.week4_persistent_routine,
+            methodology.week4_persistent_taboo,
+            methodology.week5_persistent_routine,
+            methodology.week5_persistent_taboo
+        ];
+        for (const list of lists) {
+            if (list) {
+                t = list.find(x => x.id === taskId);
+                if (t) return t.type === 'taboo' ? `🚫 Табу: ${t.title}` : t.title;
+            }
+        }
+
+        for (const week of Object.values(methodology.weeks)) {
+            if (week.daily_routine) {
+                t = week.daily_routine.find(x => x.id === taskId);
+                if (t) return t.title;
+            }
+            if (week.taboo) {
+                t = week.taboo.find(x => x.id === taskId);
+                if (t) return `🚫 Табу: ${t.title}`;
+            }
+        }
+
+        if (taskId.startsWith('custom:')) {
+            return `✏️ Личная задача: ${taskId.replace('custom:', '')}`;
+        }
+        return taskId;
+    };
+
+    const formatDateTime = (dateObj) => {
+        if (!dateObj) return 'нет данных';
+        return DateTime.fromJSDate(dateObj).setZone(foundUser.timezone || 'Europe/Kyiv').toFormat('dd.MM.yyyy в HH:mm');
+    };
+
+    const todayTasks = [];
+    if (foundUser.progress) {
+        for (const [key, value] of foundUser.progress.entries()) {
+            if (key.endsWith(todayStr) && value === true) {
+                const taskName = key.substring(0, key.length - todayStr.length - 1);
+                todayTasks.push(getTaskTitle(taskName));
+            }
+        }
+    }
+
+    const humanTails = foundUser.tails.map(t => getTaskTitle(t));
+
+    return `<b>[ИНФОРМАЦИЯ О ПОДОПЕЧНОМ]</b>
+
+👤 <b>Аккаунт:</b> @${foundUser.username || 'без username'}
+🆔 <b>ID:</b> <code>${foundUser.telegramId}</code>
+🕒 <b>Часовой пояс:</b> <code>${foundUser.timezone}</code>
+
+📅 <b>Неделя:</b> ${foundUser.currentWeek} | <b>День:</b> ${foundUser.currentDay}
+🎯 <b>Фокус:</b> ${foundUser.focusArea || '<i>не установлен</i>'}
+⚠️ <b>Страйки:</b> ${foundUser.strikes}
+❄️ <b>Заморозка:</b> ${foundUser.frozen ? `Да (разбан: ${formatDateTime(foundUser.unfreezeDate)})` : 'Нет'}
+🎓 <b>Курс завершен:</b> ${foundUser.completedTraining ? 'Да' : 'Нет'}
+
+🕒 <b>Активность:</b> ${formatDateTime(foundUser.lastActivityAt)}
+📅 <b>Зарегистрирован:</b> ${formatDateTime(foundUser.createdAt)}
+
+📝 <b>Выполнено сегодня (${todayStr}):</b>
+${todayTasks.length > 0 ? todayTasks.map(t => `— ${t}`).join('\n') : '— <i>нет выполненных задач</i>'}
+
+🎒 <b>Хвосты:</b>
+${humanTails.length > 0 ? humanTails.map(t => `— ${t}`).join('\n') : '— <i>нет хвостов</i>'}`;
 };

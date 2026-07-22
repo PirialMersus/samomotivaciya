@@ -11,6 +11,13 @@ export const createSettingsKeyboard = () => {
         .text('❌ Закрыть', 'settings:close');
 };
 
+export const createFocusSettingsKeyboard = () => {
+    return new InlineKeyboard()
+        .text('✏️ Изменить фокус', 'settings:change_focus')
+        .row()
+        .text('⬅️ Назад', 'settings:back');
+};
+
 export const createTimezoneRegionsKeyboard = () => {
     const keyboard = new InlineKeyboard();
     Object.entries(TIMEZONE_REGIONS).forEach(([key, region]) => {

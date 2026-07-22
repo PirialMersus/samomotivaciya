@@ -1,6 +1,7 @@
 import express from 'express';
 import 'dotenv/config';
 import './utils/uptime.js';
+import { DateTime } from 'luxon';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import connectDB from './config/db.js';
 import * as botControllers from './controllers/bot.controller.js';
@@ -70,6 +71,38 @@ const startApplication = async () => {
             }
         } else {
             await ctx.reply('Укажи номер недели. Пример: /setweek 5');
+        }
+    });
+
+    bot.command('info', async (ctx) => {
+        const ADMIN_ID = Number(process.env.CREATOR_ID);
+        if (ctx.from.id !== ADMIN_ID) return;
+
+        const arg = ctx.message.text.split(' ')[1];
+        if (!arg) {
+            return ctx.reply('Укажи username (без @) или Telegram ID. Пример: /info username или /info 123456');
+        }
+
+        let query = {};
+        const parsedId = parseInt(arg);
+        if (!isNaN(parsedId)) {
+            query = { telegramId: parsedId };
+        } else {
+            const cleanUsername = arg.replace('@', '').trim();
+            query = { username: new RegExp('^' + cleanUsername + '$', 'i') };
+        }
+
+        try {
+            const foundUser = await User.findOne(query);
+            if (!foundUser) {
+                return ctx.reply(`Пользователь "${arg}" не найден в базе данных.`);
+            }
+
+            const infoMsg = botControllers.formatUserCard(foundUser);
+            await ctx.reply(infoMsg, { parse_mode: 'HTML' });
+        } catch (err) {
+            console.error('Info command error:', err);
+            await ctx.reply('Произошла ошибка при поиске пользователя.');
         }
     });
 

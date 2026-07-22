@@ -127,6 +127,10 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    isCheckingUserInfo: {
+        type: Boolean,
+        default: false
+    },
     lastFocusReminderDate: {
         type: String,
         default: ''
